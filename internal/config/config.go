@@ -22,6 +22,9 @@ type Config struct {
 	ActiveImageVersion string
 	DockerImage        string
 	DockerHost         string
+	ExecTimeout        time.Duration
+	ExecMaxStdoutBytes int
+	ExecMaxStderrBytes int
 	ReadTimeout        time.Duration
 	WriteTimeout       time.Duration
 	IdleTimeout        time.Duration
@@ -44,6 +47,18 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	execTimeout, err := getEnvDuration("C4A_EXEC_TIMEOUT", 120*time.Second)
+	if err != nil {
+		return Config{}, err
+	}
+	execMaxStdoutBytes, err := getEnvInt("C4A_EXEC_MAX_STDOUT_BYTES", 1024*1024)
+	if err != nil {
+		return Config{}, err
+	}
+	execMaxStderrBytes, err := getEnvInt("C4A_EXEC_MAX_STDERR_BYTES", 1024*1024)
+	if err != nil {
+		return Config{}, err
+	}
 
 	cfg := Config{
 		HTTPListenAddr:     getEnvOrDefault("C4A_HTTP_LISTEN_ADDR", ":8080"),
@@ -59,6 +74,9 @@ func Load() (Config, error) {
 		ActiveImageVersion: strings.TrimSpace(getEnvOrDefault("C4A_ACTIVE_IMAGE_VERSION", "v1")),
 		DockerImage:        strings.TrimSpace(getEnvOrDefault("C4A_DOCKER_IMAGE", "alpine:3.20")),
 		DockerHost:         strings.TrimSpace(os.Getenv("C4A_DOCKER_HOST")),
+		ExecTimeout:        execTimeout,
+		ExecMaxStdoutBytes: execMaxStdoutBytes,
+		ExecMaxStderrBytes: execMaxStderrBytes,
 		ReadTimeout:        10 * time.Second,
 		WriteTimeout:       30 * time.Second,
 		IdleTimeout:        60 * time.Second,
@@ -97,6 +115,15 @@ func Load() (Config, error) {
 	if cfg.ShutdownTimeout <= 0 {
 		return Config{}, fmt.Errorf("C4A_SHUTDOWN_TIMEOUT must be greater than zero")
 	}
+	if cfg.ExecTimeout <= 0 {
+		return Config{}, fmt.Errorf("C4A_EXEC_TIMEOUT must be greater than zero")
+	}
+	if cfg.ExecMaxStdoutBytes <= 0 {
+		return Config{}, fmt.Errorf("C4A_EXEC_MAX_STDOUT_BYTES must be greater than zero")
+	}
+	if cfg.ExecMaxStderrBytes <= 0 {
+		return Config{}, fmt.Errorf("C4A_EXEC_MAX_STDERR_BYTES must be greater than zero")
+	}
 
 	return cfg, nil
 }
@@ -129,6 +156,18 @@ func getEnvDuration(key string, fallback time.Duration) (time.Duration, error) {
 	parsed, err := time.ParseDuration(raw)
 	if err != nil {
 		return 0, fmt.Errorf("%s must be a valid duration", key)
+	}
+	return parsed, nil
+}
+
+func getEnvInt(key string, fallback int) (int, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a valid integer", key)
 	}
 	return parsed, nil
 }

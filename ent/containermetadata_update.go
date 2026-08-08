@@ -116,6 +116,20 @@ func (_u *ContainerMetadataUpdate) ClearLastActivityAt() *ContainerMetadataUpdat
 	return _u
 }
 
+// SetExecInProgress sets the "exec_in_progress" field.
+func (_u *ContainerMetadataUpdate) SetExecInProgress(v bool) *ContainerMetadataUpdate {
+	_u.mutation.SetExecInProgress(v)
+	return _u
+}
+
+// SetNillableExecInProgress sets the "exec_in_progress" field if the given value is not nil.
+func (_u *ContainerMetadataUpdate) SetNillableExecInProgress(v *bool) *ContainerMetadataUpdate {
+	if v != nil {
+		_u.SetExecInProgress(*v)
+	}
+	return _u
+}
+
 // Mutation returns the ContainerMetadataMutation object of the builder.
 func (_u *ContainerMetadataUpdate) Mutation() *ContainerMetadataMutation {
 	return _u.mutation
@@ -207,6 +221,9 @@ func (_u *ContainerMetadataUpdate) sqlSave(ctx context.Context) (_node int, err 
 	}
 	if _u.mutation.LastActivityAtCleared() {
 		_spec.ClearField(containermetadata.FieldLastActivityAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.ExecInProgress(); ok {
+		_spec.SetField(containermetadata.FieldExecInProgress, field.TypeBool, value)
 	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -313,6 +330,20 @@ func (_u *ContainerMetadataUpdateOne) SetNillableLastActivityAt(v *time.Time) *C
 // ClearLastActivityAt clears the value of the "last_activity_at" field.
 func (_u *ContainerMetadataUpdateOne) ClearLastActivityAt() *ContainerMetadataUpdateOne {
 	_u.mutation.ClearLastActivityAt()
+	return _u
+}
+
+// SetExecInProgress sets the "exec_in_progress" field.
+func (_u *ContainerMetadataUpdateOne) SetExecInProgress(v bool) *ContainerMetadataUpdateOne {
+	_u.mutation.SetExecInProgress(v)
+	return _u
+}
+
+// SetNillableExecInProgress sets the "exec_in_progress" field if the given value is not nil.
+func (_u *ContainerMetadataUpdateOne) SetNillableExecInProgress(v *bool) *ContainerMetadataUpdateOne {
+	if v != nil {
+		_u.SetExecInProgress(*v)
+	}
 	return _u
 }
 
@@ -437,6 +468,9 @@ func (_u *ContainerMetadataUpdateOne) sqlSave(ctx context.Context) (_node *Conta
 	}
 	if _u.mutation.LastActivityAtCleared() {
 		_spec.ClearField(containermetadata.FieldLastActivityAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.ExecInProgress(); ok {
+		_spec.SetField(containermetadata.FieldExecInProgress, field.TypeBool, value)
 	}
 	_node = &ContainerMetadata{config: _u.config}
 	_spec.Assign = _node.assignValues

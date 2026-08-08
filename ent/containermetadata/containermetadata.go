@@ -30,6 +30,8 @@ const (
 	FieldProviderRef = "provider_ref"
 	// FieldLastActivityAt holds the string denoting the last_activity_at field in the database.
 	FieldLastActivityAt = "last_activity_at"
+	// FieldExecInProgress holds the string denoting the exec_in_progress field in the database.
+	FieldExecInProgress = "exec_in_progress"
 	// Table holds the table name of the containermetadata in the database.
 	Table = "container_metadata"
 )
@@ -45,6 +47,7 @@ var Columns = []string{
 	FieldImageVersion,
 	FieldProviderRef,
 	FieldLastActivityAt,
+	FieldExecInProgress,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -72,6 +75,8 @@ var (
 	ProfileValidator func(string) error
 	// ImageVersionValidator is a validator for the "image_version" field. It is called by the builders before save.
 	ImageVersionValidator func(string) error
+	// DefaultExecInProgress holds the default value on creation for the "exec_in_progress" field.
+	DefaultExecInProgress bool
 	// DefaultID holds the default value on creation for the "id" field.
 	DefaultID func() uuid.UUID
 )
@@ -122,4 +127,9 @@ func ByProviderRef(opts ...sql.OrderTermOption) OrderOption {
 // ByLastActivityAt orders the results by the last_activity_at field.
 func ByLastActivityAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldLastActivityAt, opts...).ToFunc()
+}
+
+// ByExecInProgress orders the results by the exec_in_progress field.
+func ByExecInProgress(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldExecInProgress, opts...).ToFunc()
 }

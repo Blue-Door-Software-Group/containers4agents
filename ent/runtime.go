@@ -45,6 +45,10 @@ func init() {
 	containermetadataDescImageVersion := containermetadataFields[4].Descriptor()
 	// containermetadata.ImageVersionValidator is a validator for the "image_version" field. It is called by the builders before save.
 	containermetadata.ImageVersionValidator = containermetadataDescImageVersion.Validators[0].(func(string) error)
+	// containermetadataDescExecInProgress is the schema descriptor for exec_in_progress field.
+	containermetadataDescExecInProgress := containermetadataFields[7].Descriptor()
+	// containermetadata.DefaultExecInProgress holds the default value on creation for the exec_in_progress field.
+	containermetadata.DefaultExecInProgress = containermetadataDescExecInProgress.Default.(bool)
 	// containermetadataDescID is the schema descriptor for id field.
 	containermetadataDescID := containermetadataFields[0].Descriptor()
 	// containermetadata.DefaultID holds the default value on creation for the id field.

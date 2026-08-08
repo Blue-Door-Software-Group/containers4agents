@@ -35,6 +35,8 @@ func (ContainerMetadata) Fields() []ent.Field {
 		field.Time("last_activity_at").
 			Optional().
 			Nillable(),
+		field.Bool("exec_in_progress").
+			Default(false),
 	}
 }
 
@@ -48,8 +50,10 @@ func (ContainerMetadata) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("external_id").Unique(),
 		index.Fields("state"),
+		index.Fields("exec_in_progress"),
 		index.Fields("last_activity_at"),
 		index.Fields("state", "last_activity_at"),
+		index.Fields("state", "exec_in_progress"),
 		index.Fields("provider_ref"),
 	}
 }

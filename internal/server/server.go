@@ -36,6 +36,7 @@ func NewHandler(
 	m *metrics.Metrics,
 	authMw func(http.Handler) http.Handler,
 	containerHandler *handlers.ContainerHandler,
+	executionHandler *handlers.ExecutionHandler,
 ) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /healthz", m.Middleware("/healthz", http.HandlerFunc(handlers.Health)))
@@ -46,6 +47,9 @@ func NewHandler(
 		mux.Handle("POST /v1/containers/{id}/stop", m.Middleware("/v1/containers:stop", authMw(http.HandlerFunc(containerHandler.Stop))))
 		mux.Handle("POST /v1/containers/{id}/start", m.Middleware("/v1/containers:start", authMw(http.HandlerFunc(containerHandler.Start))))
 		mux.Handle("POST /v1/containers/{id}/prune", m.Middleware("/v1/containers:prune", authMw(http.HandlerFunc(containerHandler.Prune))))
+	}
+	if authMw != nil && executionHandler != nil {
+		mux.Handle("POST /v1/containers/{id}/exec", m.Middleware("/v1/containers:exec", authMw(http.HandlerFunc(executionHandler.Exec))))
 	}
 	mux.Handle("/", m.Middleware("/*", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestID := middleware.GetRequestID(r.Context())

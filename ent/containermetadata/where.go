@@ -95,6 +95,11 @@ func LastActivityAt(v time.Time) predicate.ContainerMetadata {
 	return predicate.ContainerMetadata(sql.FieldEQ(FieldLastActivityAt, v))
 }
 
+// ExecInProgress applies equality check predicate on the "exec_in_progress" field. It's identical to ExecInProgressEQ.
+func ExecInProgress(v bool) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEQ(FieldExecInProgress, v))
+}
+
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
 func CreatedAtEQ(v time.Time) predicate.ContainerMetadata {
 	return predicate.ContainerMetadata(sql.FieldEQ(FieldCreatedAt, v))
@@ -558,6 +563,16 @@ func LastActivityAtIsNil() predicate.ContainerMetadata {
 // LastActivityAtNotNil applies the NotNil predicate on the "last_activity_at" field.
 func LastActivityAtNotNil() predicate.ContainerMetadata {
 	return predicate.ContainerMetadata(sql.FieldNotNull(FieldLastActivityAt))
+}
+
+// ExecInProgressEQ applies the EQ predicate on the "exec_in_progress" field.
+func ExecInProgressEQ(v bool) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEQ(FieldExecInProgress, v))
+}
+
+// ExecInProgressNEQ applies the NEQ predicate on the "exec_in_progress" field.
+func ExecInProgressNEQ(v bool) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNEQ(FieldExecInProgress, v))
 }
 
 // And groups predicates with the AND operator between them.

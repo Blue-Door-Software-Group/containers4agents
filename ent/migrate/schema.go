@@ -19,6 +19,7 @@ var (
 		{Name: "image_version", Type: field.TypeString},
 		{Name: "provider_ref", Type: field.TypeString, Nullable: true},
 		{Name: "last_activity_at", Type: field.TypeTime, Nullable: true},
+		{Name: "exec_in_progress", Type: field.TypeBool, Default: false},
 	}
 	// ContainerMetadataTable holds the schema information for the "container_metadata" table.
 	ContainerMetadataTable = &schema.Table{
@@ -37,6 +38,11 @@ var (
 				Columns: []*schema.Column{ContainerMetadataColumns[4]},
 			},
 			{
+				Name:    "containermetadata_exec_in_progress",
+				Unique:  false,
+				Columns: []*schema.Column{ContainerMetadataColumns[9]},
+			},
+			{
 				Name:    "containermetadata_last_activity_at",
 				Unique:  false,
 				Columns: []*schema.Column{ContainerMetadataColumns[8]},
@@ -45,6 +51,11 @@ var (
 				Name:    "containermetadata_state_last_activity_at",
 				Unique:  false,
 				Columns: []*schema.Column{ContainerMetadataColumns[4], ContainerMetadataColumns[8]},
+			},
+			{
+				Name:    "containermetadata_state_exec_in_progress",
+				Unique:  false,
+				Columns: []*schema.Column{ContainerMetadataColumns[4], ContainerMetadataColumns[9]},
 			},
 			{
 				Name:    "containermetadata_provider_ref",

@@ -16,6 +16,7 @@ import (
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/api/middleware"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/auth"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/config"
+	"github.com/Blue-Door-Software-Group/containers4agents/internal/execution"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/lifecycle"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/metadata/entrepo"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/metadata/migrations"
@@ -56,6 +57,9 @@ func setupPhase1IntegrationEnv(t *testing.T) *phase1IntegrationEnv {
 		DefaultProfile:     "prod-strict",
 		ActiveImageVersion: "v1",
 		DockerImage:        envOrDefault("C4A_TEST_DOCKER_IMAGE", "alpine:3.20"),
+		ExecTimeout:        2 * time.Second,
+		ExecMaxStdoutBytes: 4096,
+		ExecMaxStderrBytes: 4096,
 		ReadTimeout:        10 * time.Second,
 		WriteTimeout:       30 * time.Second,
 		IdleTimeout:        60 * time.Second,
@@ -81,13 +85,15 @@ func setupPhase1IntegrationEnv(t *testing.T) *phase1IntegrationEnv {
 
 	containerRepo := repository.NewEntContainerRepository(repoClient.Ent)
 	lifecycleSvc := lifecycle.NewService(containerRepo, dockerProvider, cfg)
+	executionSvc := execution.NewService(containerRepo, dockerProvider, cfg)
 	containerHandler := handlers.NewContainerHandler(lifecycleSvc)
+	executionHandler := handlers.NewExecutionHandler(executionSvc)
 	keyManager, err := auth.NewKeyManager(cfg.APIKey, false)
 	if err != nil {
 		t.Fatalf("create key manager: %v", err)
 	}
 
-	handler := NewHandler(metrics.New(), middleware.Auth(keyManager), containerHandler)
+	handler := NewHandler(metrics.New(), middleware.Auth(keyManager), containerHandler, executionHandler)
 	httpServer := httptest.NewServer(handler)
 
 	return &phase1IntegrationEnv{
@@ -166,9 +172,15 @@ func TestPhase1CreateStatusStopAndRestartPersistence(t *testing.T) {
 
 	// Restart API process and verify persisted state.
 	env.httpServer.Close()
-	handler := NewHandler(metrics.New(), middleware.Auth(mustKeyManager(t, "integration-key")), handlers.NewContainerHandler(
-		lifecycle.NewService(repository.NewEntContainerRepository(env.repoClient.Ent), env.provider, env.cfg),
-	))
+	repo := repository.NewEntContainerRepository(env.repoClient.Ent)
+	lifecycleSvc := lifecycle.NewService(repo, env.provider, env.cfg)
+	executionSvc := execution.NewService(repo, env.provider, env.cfg)
+	handler := NewHandler(
+		metrics.New(),
+		middleware.Auth(mustKeyManager(t, "integration-key")),
+		handlers.NewContainerHandler(lifecycleSvc),
+		handlers.NewExecutionHandler(executionSvc),
+	)
 	env.httpServer = httptest.NewServer(handler)
 
 	statusReq2, _ := http.NewRequest(http.MethodGet, env.httpServer.URL+"/v1/containers/"+containerID, nil)

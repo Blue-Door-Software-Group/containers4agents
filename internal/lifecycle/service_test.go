@@ -16,6 +16,8 @@ type fakeRepo struct {
 	getFn           func(context.Context, string) (*repository.Container, error)
 	updateFn        func(context.Context, repository.UpdateStateParams) (*repository.Container, error)
 	updateIfCurrent func(context.Context, repository.UpdateStateParams, string) (*repository.Container, error)
+	beginExecFn     func(context.Context, string, string) error
+	endExecFn       func(context.Context, string) error
 }
 
 func (f fakeRepo) Create(ctx context.Context, params repository.CreateParams) (*repository.Container, error) {
@@ -29,6 +31,18 @@ func (f fakeRepo) UpdateState(ctx context.Context, params repository.UpdateState
 }
 func (f fakeRepo) UpdateStateIfCurrent(ctx context.Context, params repository.UpdateStateParams, expected string) (*repository.Container, error) {
 	return f.updateIfCurrent(ctx, params, expected)
+}
+func (f fakeRepo) BeginExecution(ctx context.Context, externalID string, expectedState string) error {
+	if f.beginExecFn == nil {
+		return nil
+	}
+	return f.beginExecFn(ctx, externalID, expectedState)
+}
+func (f fakeRepo) EndExecution(ctx context.Context, externalID string) error {
+	if f.endExecFn == nil {
+		return nil
+	}
+	return f.endExecFn(ctx, externalID)
 }
 
 type fakeProvider struct {

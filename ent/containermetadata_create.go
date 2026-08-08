@@ -109,6 +109,20 @@ func (_c *ContainerMetadataCreate) SetNillableLastActivityAt(v *time.Time) *Cont
 	return _c
 }
 
+// SetExecInProgress sets the "exec_in_progress" field.
+func (_c *ContainerMetadataCreate) SetExecInProgress(v bool) *ContainerMetadataCreate {
+	_c.mutation.SetExecInProgress(v)
+	return _c
+}
+
+// SetNillableExecInProgress sets the "exec_in_progress" field if the given value is not nil.
+func (_c *ContainerMetadataCreate) SetNillableExecInProgress(v *bool) *ContainerMetadataCreate {
+	if v != nil {
+		_c.SetExecInProgress(*v)
+	}
+	return _c
+}
+
 // SetID sets the "id" field.
 func (_c *ContainerMetadataCreate) SetID(v uuid.UUID) *ContainerMetadataCreate {
 	_c.mutation.SetID(v)
@@ -170,6 +184,10 @@ func (_c *ContainerMetadataCreate) defaults() {
 		v := containermetadata.DefaultState
 		_c.mutation.SetState(v)
 	}
+	if _, ok := _c.mutation.ExecInProgress(); !ok {
+		v := containermetadata.DefaultExecInProgress
+		_c.mutation.SetExecInProgress(v)
+	}
 	if _, ok := _c.mutation.ID(); !ok {
 		v := containermetadata.DefaultID()
 		_c.mutation.SetID(v)
@@ -210,6 +228,9 @@ func (_c *ContainerMetadataCreate) check() error {
 		if err := containermetadata.ImageVersionValidator(v); err != nil {
 			return &ValidationError{Name: "image_version", err: fmt.Errorf(`ent: validator failed for field "ContainerMetadata.image_version": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.ExecInProgress(); !ok {
+		return &ValidationError{Name: "exec_in_progress", err: errors.New(`ent: missing required field "ContainerMetadata.exec_in_progress"`)}
 	}
 	return nil
 }
@@ -277,6 +298,10 @@ func (_c *ContainerMetadataCreate) createSpec() (*ContainerMetadata, *sqlgraph.C
 	if value, ok := _c.mutation.LastActivityAt(); ok {
 		_spec.SetField(containermetadata.FieldLastActivityAt, field.TypeTime, value)
 		_node.LastActivityAt = &value
+	}
+	if value, ok := _c.mutation.ExecInProgress(); ok {
+		_spec.SetField(containermetadata.FieldExecInProgress, field.TypeBool, value)
+		_node.ExecInProgress = value
 	}
 	return _node, _spec
 }

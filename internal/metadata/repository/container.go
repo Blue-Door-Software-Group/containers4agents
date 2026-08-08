@@ -14,11 +14,13 @@ import (
 
 var ErrNotFound = errors.New("container metadata not found")
 var ErrStateConflict = errors.New("container metadata state conflict")
+var ErrExecutionInProgress = errors.New("container execution already in progress")
 
 type Container struct {
 	ID             string
 	ExternalID     string
 	State          string
+	ExecInProgress bool
 	Profile        string
 	ImageVersion   string
 	ProviderRef    *string
@@ -45,6 +47,8 @@ type ContainerRepository interface {
 	GetByExternalID(ctx context.Context, externalID string) (*Container, error)
 	UpdateState(ctx context.Context, params UpdateStateParams) (*Container, error)
 	UpdateStateIfCurrent(ctx context.Context, params UpdateStateParams, expectedCurrentState string) (*Container, error)
+	BeginExecution(ctx context.Context, externalID string, expectedState string) error
+	EndExecution(ctx context.Context, externalID string) error
 }
 
 type EntContainerRepository struct {
@@ -176,11 +180,60 @@ func (r *EntContainerRepository) FindLongestIdleStopped(ctx context.Context, lim
 	return result, nil
 }
 
+func (r *EntContainerRepository) BeginExecution(ctx context.Context, externalID string, expectedState string) error {
+	count, err := r.client.ContainerMetadata.
+		Update().
+		Where(
+			containermetadata.ExternalIDEQ(externalID),
+			containermetadata.StateEQ(expectedState),
+			containermetadata.ExecInProgressEQ(false),
+		).
+		SetExecInProgress(true).
+		Save(ctx)
+	if err != nil {
+		return fmt.Errorf("begin execution lease: %w", err)
+	}
+	if count == 1 {
+		return nil
+	}
+
+	row, getErr := r.GetByExternalID(ctx, externalID)
+	if getErr != nil {
+		if errors.Is(getErr, ErrNotFound) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("load row after begin execution lease failure: %w", getErr)
+	}
+	if row.State != expectedState {
+		return ErrStateConflict
+	}
+	if row.ExecInProgress {
+		return ErrExecutionInProgress
+	}
+	return ErrStateConflict
+}
+
+func (r *EntContainerRepository) EndExecution(ctx context.Context, externalID string) error {
+	count, err := r.client.ContainerMetadata.
+		Update().
+		Where(containermetadata.ExternalIDEQ(externalID)).
+		SetExecInProgress(false).
+		Save(ctx)
+	if err != nil {
+		return fmt.Errorf("end execution lease: %w", err)
+	}
+	if count == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func mapRow(row *ent.ContainerMetadata) *Container {
 	return &Container{
 		ID:             row.ID.String(),
 		ExternalID:     row.ExternalID,
 		State:          row.State,
+		ExecInProgress: row.ExecInProgress,
 		Profile:        row.Profile,
 		ImageVersion:   row.ImageVersion,
 		ProviderRef:    row.ProviderRef,

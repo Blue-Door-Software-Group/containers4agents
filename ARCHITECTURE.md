@@ -135,6 +135,14 @@ type ContainerProvider interface {
 5. Response returns execution status taxonomy and duration/resource summary.
 6. Activity timestamps update without extending lifecycle via passive polling.
 
+Execute command semantics:
+
+- Execution requests use structured argv payloads (`command: []string`) rather than free-form shell strings.
+- Timeout is enforced by server policy/configuration for predictable control-plane behavior.
+- Only one in-flight execution per container is permitted; concurrent requests return conflict.
+- The in-flight execution lease is persisted in metadata so the single-exec invariant is enforced across multiple API replicas.
+- Exec against non-running containers does not implicitly resume the container.
+
 ### 4.3 File operations
 
 1. API validates root-relative path constraints.

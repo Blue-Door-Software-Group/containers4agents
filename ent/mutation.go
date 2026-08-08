@@ -42,6 +42,7 @@ type ContainerMetadataMutation struct {
 	image_version    *string
 	provider_ref     *string
 	last_activity_at *time.Time
+	exec_in_progress *bool
 	clearedFields    map[string]struct{}
 	done             bool
 	oldValue         func(context.Context) (*ContainerMetadata, error)
@@ -466,6 +467,42 @@ func (m *ContainerMetadataMutation) ResetLastActivityAt() {
 	delete(m.clearedFields, containermetadata.FieldLastActivityAt)
 }
 
+// SetExecInProgress sets the "exec_in_progress" field.
+func (m *ContainerMetadataMutation) SetExecInProgress(b bool) {
+	m.exec_in_progress = &b
+}
+
+// ExecInProgress returns the value of the "exec_in_progress" field in the mutation.
+func (m *ContainerMetadataMutation) ExecInProgress() (r bool, exists bool) {
+	v := m.exec_in_progress
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExecInProgress returns the old "exec_in_progress" field's value of the ContainerMetadata entity.
+// If the ContainerMetadata object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ContainerMetadataMutation) OldExecInProgress(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExecInProgress is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExecInProgress requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExecInProgress: %w", err)
+	}
+	return oldValue.ExecInProgress, nil
+}
+
+// ResetExecInProgress resets all changes to the "exec_in_progress" field.
+func (m *ContainerMetadataMutation) ResetExecInProgress() {
+	m.exec_in_progress = nil
+}
+
 // Where appends a list predicates to the ContainerMetadataMutation builder.
 func (m *ContainerMetadataMutation) Where(ps ...predicate.ContainerMetadata) {
 	m.predicates = append(m.predicates, ps...)
@@ -500,7 +537,7 @@ func (m *ContainerMetadataMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ContainerMetadataMutation) Fields() []string {
-	fields := make([]string, 0, 8)
+	fields := make([]string, 0, 9)
 	if m.created_at != nil {
 		fields = append(fields, containermetadata.FieldCreatedAt)
 	}
@@ -524,6 +561,9 @@ func (m *ContainerMetadataMutation) Fields() []string {
 	}
 	if m.last_activity_at != nil {
 		fields = append(fields, containermetadata.FieldLastActivityAt)
+	}
+	if m.exec_in_progress != nil {
+		fields = append(fields, containermetadata.FieldExecInProgress)
 	}
 	return fields
 }
@@ -549,6 +589,8 @@ func (m *ContainerMetadataMutation) Field(name string) (ent.Value, bool) {
 		return m.ProviderRef()
 	case containermetadata.FieldLastActivityAt:
 		return m.LastActivityAt()
+	case containermetadata.FieldExecInProgress:
+		return m.ExecInProgress()
 	}
 	return nil, false
 }
@@ -574,6 +616,8 @@ func (m *ContainerMetadataMutation) OldField(ctx context.Context, name string) (
 		return m.OldProviderRef(ctx)
 	case containermetadata.FieldLastActivityAt:
 		return m.OldLastActivityAt(ctx)
+	case containermetadata.FieldExecInProgress:
+		return m.OldExecInProgress(ctx)
 	}
 	return nil, fmt.Errorf("unknown ContainerMetadata field %s", name)
 }
@@ -638,6 +682,13 @@ func (m *ContainerMetadataMutation) SetField(name string, value ent.Value) error
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetLastActivityAt(v)
+		return nil
+	case containermetadata.FieldExecInProgress:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExecInProgress(v)
 		return nil
 	}
 	return fmt.Errorf("unknown ContainerMetadata field %s", name)
@@ -726,6 +777,9 @@ func (m *ContainerMetadataMutation) ResetField(name string) error {
 		return nil
 	case containermetadata.FieldLastActivityAt:
 		m.ResetLastActivityAt()
+		return nil
+	case containermetadata.FieldExecInProgress:
+		m.ResetExecInProgress()
 		return nil
 	}
 	return fmt.Errorf("unknown ContainerMetadata field %s", name)

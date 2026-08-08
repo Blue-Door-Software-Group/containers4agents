@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestLoadRequiresDSN(t *testing.T) {
 	t.Setenv("CONTAINERS4AGENTS_API_KEY", "test-key")
@@ -42,6 +45,15 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if !cfg.AutoMigrate {
 		t.Fatal("expected auto migrate true")
+	}
+	if cfg.ExecTimeout != 120*time.Second {
+		t.Fatalf("expected default exec timeout 120s, got %s", cfg.ExecTimeout)
+	}
+	if cfg.ExecMaxStdoutBytes != 1024*1024 {
+		t.Fatalf("expected default stdout cap 1048576, got %d", cfg.ExecMaxStdoutBytes)
+	}
+	if cfg.ExecMaxStderrBytes != 1024*1024 {
+		t.Fatalf("expected default stderr cap 1048576, got %d", cfg.ExecMaxStderrBytes)
 	}
 }
 
@@ -90,5 +102,41 @@ func TestLoadAllowsMissingAPIKeyWhenDevModeTrue(t *testing.T) {
 	_, err := Load()
 	if err != nil {
 		t.Fatalf("expected success when DEV_MODE is true, got: %v", err)
+	}
+}
+
+func TestLoadRejectsInvalidExecTimeout(t *testing.T) {
+	t.Setenv("CONTAINERS4AGENTS_API_KEY", "test-key")
+	t.Setenv("C4A_DB_DSN", "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable")
+	t.Setenv("C4A_DB_DRIVER", "postgres")
+	t.Setenv("C4A_EXEC_TIMEOUT", "bad-timeout")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for invalid C4A_EXEC_TIMEOUT")
+	}
+}
+
+func TestLoadRejectsInvalidExecStdoutCap(t *testing.T) {
+	t.Setenv("CONTAINERS4AGENTS_API_KEY", "test-key")
+	t.Setenv("C4A_DB_DSN", "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable")
+	t.Setenv("C4A_DB_DRIVER", "postgres")
+	t.Setenv("C4A_EXEC_MAX_STDOUT_BYTES", "bad-int")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for invalid C4A_EXEC_MAX_STDOUT_BYTES")
+	}
+}
+
+func TestLoadRejectsNonPositiveExecCaps(t *testing.T) {
+	t.Setenv("CONTAINERS4AGENTS_API_KEY", "test-key")
+	t.Setenv("C4A_DB_DSN", "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable")
+	t.Setenv("C4A_DB_DRIVER", "postgres")
+	t.Setenv("C4A_EXEC_MAX_STDOUT_BYTES", "0")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error when C4A_EXEC_MAX_STDOUT_BYTES is not positive")
 	}
 }

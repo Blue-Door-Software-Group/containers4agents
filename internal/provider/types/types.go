@@ -1,6 +1,9 @@
 package types
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type SandboxSpec struct {
 	ExternalID   string
@@ -15,8 +18,10 @@ type ProviderContainer struct {
 }
 
 type ExecRequest struct {
-	Command []string
-	Timeout int64
+	Command        []string
+	Timeout        time.Duration
+	MaxStdoutBytes int
+	MaxStderrBytes int
 }
 
 type ExecResult struct {

@@ -12,6 +12,7 @@ import (
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/api/middleware"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/auth"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/config"
+	"github.com/Blue-Door-Software-Group/containers4agents/internal/execution"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/lifecycle"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/metadata/entrepo"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/metadata/migrations"
@@ -79,11 +80,13 @@ func run() error {
 
 	containerRepo := repository.NewEntContainerRepository(repoClient.Ent)
 	lifecycleSvc := lifecycle.NewService(containerRepo, dockerProvider, cfg)
+	executionSvc := execution.NewService(containerRepo, dockerProvider, cfg)
 	containerHandler := handlers.NewContainerHandler(lifecycleSvc)
+	executionHandler := handlers.NewExecutionHandler(executionSvc)
 	authMw := middleware.Auth(keyManager)
 
 	metricsRegistry := metrics.New()
-	handler := server.NewHandler(metricsRegistry, authMw, containerHandler)
+	handler := server.NewHandler(metricsRegistry, authMw, containerHandler, executionHandler)
 	apiServer := server.New(cfg, logger, handler)
 
 	signalCh := make(chan os.Signal, 1)

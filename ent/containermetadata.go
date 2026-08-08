@@ -34,6 +34,8 @@ type ContainerMetadata struct {
 	ProviderRef *string `json:"provider_ref,omitempty"`
 	// LastActivityAt holds the value of the "last_activity_at" field.
 	LastActivityAt *time.Time `json:"last_activity_at,omitempty"`
+	// ExecInProgress holds the value of the "exec_in_progress" field.
+	ExecInProgress bool `json:"exec_in_progress,omitempty"`
 	selectValues   sql.SelectValues
 }
 
@@ -42,6 +44,8 @@ func (*ContainerMetadata) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
+		case containermetadata.FieldExecInProgress:
+			values[i] = new(sql.NullBool)
 		case containermetadata.FieldExternalID, containermetadata.FieldState, containermetadata.FieldProfile, containermetadata.FieldImageVersion, containermetadata.FieldProviderRef:
 			values[i] = new(sql.NullString)
 		case containermetadata.FieldCreatedAt, containermetadata.FieldUpdatedAt, containermetadata.FieldLastActivityAt:
@@ -119,6 +123,12 @@ func (_m *ContainerMetadata) assignValues(columns []string, values []any) error 
 				_m.LastActivityAt = new(time.Time)
 				*_m.LastActivityAt = value.Time
 			}
+		case containermetadata.FieldExecInProgress:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field exec_in_progress", values[i])
+			} else if value.Valid {
+				_m.ExecInProgress = value.Bool
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -182,6 +192,9 @@ func (_m *ContainerMetadata) String() string {
 		builder.WriteString("last_activity_at=")
 		builder.WriteString(v.Format(time.ANSIC))
 	}
+	builder.WriteString(", ")
+	builder.WriteString("exec_in_progress=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ExecInProgress))
 	builder.WriteByte(')')
 	return builder.String()
 }
