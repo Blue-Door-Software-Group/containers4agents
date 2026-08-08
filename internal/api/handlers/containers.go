@@ -13,6 +13,7 @@ import (
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/api/middleware"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/idempotency"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/lifecycle"
+	obslog "github.com/Blue-Door-Software-Group/containers4agents/internal/observability/logging"
 )
 
 type ContainerService interface {
@@ -265,11 +266,11 @@ func (h *ContainerHandler) completeIdempotent(
 	}
 	bytes, err := json.Marshal(payload)
 	if err != nil {
-		slog.WarnContext(ctx, "failed to marshal idempotent response payload", "operation", operation, "error", err)
+		obslog.WithRequestID(ctx, slog.Default()).WarnContext(ctx, "failed to marshal idempotent response payload", "component", "api_containers", "operation", operation, "error_category", obslog.ErrorCategory(err))
 		return
 	}
 	if err := h.idem.Complete(ctx, operation, scope, key, requestHash, status, string(bytes)); err != nil {
-		slog.WarnContext(ctx, "failed to persist idempotency response", "operation", operation, "error", err)
+		obslog.WithRequestID(ctx, slog.Default()).WarnContext(ctx, "failed to persist idempotency response", "component", "api_containers", "operation", operation, "error_category", obslog.ErrorCategory(err))
 	}
 }
 

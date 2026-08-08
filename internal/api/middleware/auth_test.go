@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	apierrors "github.com/Blue-Door-Software-Group/containers4agents/internal/api/errors"
+	obsmetrics "github.com/Blue-Door-Software-Group/containers4agents/internal/observability/metrics"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 type staticAuthorizer struct {
@@ -56,5 +58,24 @@ func TestAuthMiddlewareAllowsAuthorized(t *testing.T) {
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected status 204, got %d", rec.Code)
+	}
+}
+
+func TestAuthMiddlewareRecordsFailureMetric(t *testing.T) {
+	m := obsmetrics.New()
+	protected := Auth(staticAuthorizer{allow: false}, m)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	handler := RequestID(protected)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/containers", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d", rec.Code)
+	}
+	if got := testutil.ToFloat64(m.AuthFailures.WithLabelValues("missing_authorization_header")); got != 1 {
+		t.Fatalf("expected missing auth header metric to be 1, got %v", got)
 	}
 }

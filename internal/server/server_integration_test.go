@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -35,6 +37,23 @@ func TestHealthzAndMetricsAvailable(t *testing.T) {
 
 	if metricsResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected metrics status 200, got %d", metricsResp.StatusCode)
+	}
+	body, err := io.ReadAll(metricsResp.Body)
+	if err != nil {
+		t.Fatalf("read metrics body: %v", err)
+	}
+	required := [][]byte{
+		[]byte("c4a_http_requests_total"),
+		[]byte("c4a_running_containers"),
+		[]byte("c4a_stopped_containers"),
+		[]byte("c4a_total_containers"),
+		[]byte("c4a_exec_in_progress"),
+		[]byte("c4a_reconcile_leader"),
+	}
+	for _, name := range required {
+		if !bytes.Contains(body, name) {
+			t.Fatalf("expected metrics output to contain %q", string(name))
+		}
 	}
 }
 

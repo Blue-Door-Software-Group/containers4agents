@@ -17,6 +17,7 @@ import (
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/api/middleware"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/files"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/idempotency"
+	obslog "github.com/Blue-Door-Software-Group/containers4agents/internal/observability/logging"
 )
 
 type FileService interface {
@@ -148,7 +149,13 @@ func (h *FileHandler) Download(w http.ResponseWriter, r *http.Request) {
 			writeFileError(w, r, err)
 			return
 		}
-		slog.WarnContext(r.Context(), "file download stream failed after response write started", "container_id", externalID, "path", requestedPath, "error", err)
+		obslog.WithRequestID(r.Context(), slog.Default()).WarnContext(
+			r.Context(),
+			"file download stream failed after response write started",
+			"component", "api_files",
+			"operation", "download",
+			"error_category", obslog.ErrorCategory(err),
+		)
 	}
 }
 
@@ -282,7 +289,7 @@ func (h *FileHandler) completeIdempotent(
 		return
 	}
 	if err := h.idem.Complete(ctx, operation, scope, key, requestHash, status, responseBody); err != nil {
-		slog.WarnContext(ctx, "failed to persist file idempotency response", "operation", operation, "error", err)
+		obslog.WithRequestID(ctx, slog.Default()).WarnContext(ctx, "failed to persist file idempotency response", "component", "api_files", "operation", operation, "error_category", obslog.ErrorCategory(err))
 	}
 }
 

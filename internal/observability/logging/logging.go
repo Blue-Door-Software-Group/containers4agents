@@ -1,12 +1,17 @@
 package logging
 
 import (
+	"context"
+	"errors"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
+
+	"github.com/Blue-Door-Software-Group/containers4agents/internal/api/middleware"
 )
 
-func New(level string) *slog.Logger {
+func levelFromString(level string) slog.Level {
 	var slogLevel slog.Level
 	switch strings.ToLower(strings.TrimSpace(level)) {
 	case "debug":
@@ -18,8 +23,39 @@ func New(level string) *slog.Logger {
 	default:
 		slogLevel = slog.LevelInfo
 	}
+	return slogLevel
+}
 
-	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slogLevel,
+func New(level string) *slog.Logger {
+	return NewWithWriter(level, os.Stdout)
+}
+
+func NewWithWriter(level string, writer io.Writer) *slog.Logger {
+	return slog.New(slog.NewJSONHandler(writer, &slog.HandlerOptions{
+		Level: levelFromString(level),
 	}))
+}
+
+func WithRequestID(ctx context.Context, logger *slog.Logger) *slog.Logger {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	requestID := middleware.GetRequestID(ctx)
+	if requestID == "" {
+		return logger
+	}
+	return logger.With("request_id", requestID)
+}
+
+func ErrorCategory(err error) string {
+	switch {
+	case err == nil:
+		return "none"
+	case errors.Is(err, context.Canceled):
+		return "context_canceled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	default:
+		return "internal_error"
+	}
 }

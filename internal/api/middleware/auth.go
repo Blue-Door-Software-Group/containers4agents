@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	apierrors "github.com/Blue-Door-Software-Group/containers4agents/internal/api/errors"
+	obsmetrics "github.com/Blue-Door-Software-Group/containers4agents/internal/observability/metrics"
 )
 
 type Authorizer interface {
@@ -12,10 +13,22 @@ type Authorizer interface {
 	IsAuthorized(authHeader string) bool
 }
 
-func Auth(authorizer Authorizer) func(http.Handler) http.Handler {
+func Auth(authorizer Authorizer, metrics ...*obsmetrics.Metrics) func(http.Handler) http.Handler {
+	var m *obsmetrics.Metrics
+	if len(metrics) > 0 {
+		m = metrics[0]
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !authorizer.IsAuthorized(r.Header.Get("Authorization")) {
+			authHeader := r.Header.Get("Authorization")
+			if !authorizer.IsAuthorized(authHeader) {
+				reason := "invalid_credentials"
+				if authHeader == "" {
+					reason = "missing_authorization_header"
+				}
+				if m != nil {
+					m.RecordAuthFailure(reason)
+				}
 				requestID := GetRequestID(r.Context())
 				apierrors.Write(w, requestID, apierrors.Unauthorized("unauthorized"))
 				return

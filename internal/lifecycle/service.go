@@ -10,6 +10,7 @@ import (
 
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/config"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/metadata/repository"
+	obsmetrics "github.com/Blue-Door-Software-Group/containers4agents/internal/observability/metrics"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/provider/types"
 )
 
@@ -24,6 +25,7 @@ type Service struct {
 	repo     repository.ContainerRepository
 	provider types.ContainerProvider
 	cfg      config.Config
+	metrics  *obsmetrics.Metrics
 }
 
 type ContainerView struct {
@@ -42,31 +44,51 @@ type ContainerView struct {
 	LastPruneError           *string
 }
 
-func NewService(repo repository.ContainerRepository, provider types.ContainerProvider, cfg config.Config) *Service {
+func NewService(repo repository.ContainerRepository, provider types.ContainerProvider, cfg config.Config, metrics ...*obsmetrics.Metrics) *Service {
+	var m *obsmetrics.Metrics
+	if len(metrics) > 0 {
+		m = metrics[0]
+	}
 	return &Service{
 		repo:     repo,
 		provider: provider,
 		cfg:      cfg,
+		metrics:  m,
 	}
 }
 
 func (s *Service) CreateContainer(ctx context.Context) (*ContainerView, error) {
+	started := time.Now()
+	outcome := "internal_error"
+	defer func() {
+		s.observeLifecycle("create", outcome, time.Since(started))
+	}()
+
 	if err := s.ensureCapacityForCreate(ctx); err != nil {
+		if errors.Is(err, ErrCapacityExceeded) {
+			outcome = "capacity_rejected"
+		}
 		return nil, err
 	}
 
 	runningCount, err := s.repo.CountByState(ctx, StateRunning)
 	if err != nil {
+		outcome = "internal_error"
 		return nil, fmt.Errorf("count running containers: %w", err)
 	}
 	if s.cfg.RunningContainerLimit > 0 && runningCount >= s.cfg.RunningContainerLimit {
+		outcome = "capacity_rejected"
+		s.recordCapacityEvent("admission", "running_limit_reached")
 		return nil, fmt.Errorf("%w: running container limit reached", ErrCapacityExceeded)
 	}
 	totalCount, err := s.repo.CountTotal(ctx)
 	if err != nil {
+		outcome = "internal_error"
 		return nil, fmt.Errorf("count total containers: %w", err)
 	}
 	if s.cfg.TotalContainerLimit > 0 && totalCount >= s.cfg.TotalContainerLimit {
+		outcome = "capacity_rejected"
+		s.recordCapacityEvent("admission", "total_limit_reached")
 		return nil, fmt.Errorf("%w: total container limit reached", ErrCapacityExceeded)
 	}
 
@@ -77,6 +99,7 @@ func (s *Service) CreateContainer(ctx context.Context) (*ContainerView, error) {
 		ImageVersion: s.cfg.ActiveImageVersion,
 	})
 	if err != nil {
+		outcome = "internal_error"
 		return nil, fmt.Errorf("create metadata row: %w", err)
 	}
 
@@ -98,6 +121,8 @@ func (s *Service) CreateContainer(ctx context.Context) (*ContainerView, error) {
 		},
 	})
 	if err != nil {
+		outcome = "provider_failure"
+		s.recordProviderFailure("create_sandbox", providerFailureCategory(err))
 		if failedState, stateErr := NextState(row.State, TransitionCreateFailed); stateErr == nil {
 			_, _ = s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
 				ExternalID: row.ExternalID,
@@ -109,6 +134,7 @@ func (s *Service) CreateContainer(ctx context.Context) (*ContainerView, error) {
 
 	next, err := NextState(row.State, TransitionCreateSucceeded)
 	if err != nil {
+		outcome = "state_conflict"
 		return nil, err
 	}
 	now := time.Now().UTC()
@@ -127,11 +153,14 @@ func (s *Service) CreateContainer(ctx context.Context) (*ContainerView, error) {
 	}, row.State)
 	if err != nil {
 		if errors.Is(err, repository.ErrStateConflict) {
+			outcome = "state_conflict"
 			return nil, fmt.Errorf("%w: create transition race", ErrStateConflict)
 		}
+		outcome = "internal_error"
 		return nil, fmt.Errorf("persist running state: %w", err)
 	}
-
+	outcome = "success"
+	s.refreshContainerCountMetrics(ctx)
 	return mapContainer(updated), nil
 }
 
@@ -148,9 +177,16 @@ func (s *Service) GetContainer(ctx context.Context, externalID string) (*Contain
 }
 
 func (s *Service) StopContainer(ctx context.Context, externalID string) (*ContainerView, error) {
+	started := time.Now()
+	outcome := "internal_error"
+	defer func() {
+		s.observeLifecycle("stop", outcome, time.Since(started))
+	}()
+
 	row, err := s.repo.GetByExternalID(ctx, externalID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
+			outcome = "not_found"
 			return nil, ErrContainerNotFound
 		}
 		return nil, fmt.Errorf("load metadata row: %w", err)
@@ -158,6 +194,7 @@ func (s *Service) StopContainer(ctx context.Context, externalID string) (*Contai
 
 	stoppingState, err := NextState(row.State, TransitionStopRequested)
 	if err != nil {
+		outcome = "state_conflict"
 		return nil, err
 	}
 
@@ -166,15 +203,19 @@ func (s *Service) StopContainer(ctx context.Context, externalID string) (*Contai
 		State:      stoppingState,
 	}, row.State); err != nil {
 		if errors.Is(err, repository.ErrStateConflict) {
+			outcome = "state_conflict"
 			return nil, fmt.Errorf("%w: stop transition race", ErrStateConflict)
 		}
 		return nil, fmt.Errorf("persist stopping state: %w", err)
 	}
 
 	if row.ProviderRef == nil || *row.ProviderRef == "" {
+		outcome = "state_conflict"
 		return nil, fmt.Errorf("%w: missing provider reference", ErrStateConflict)
 	}
 	if err := s.provider.StopSandbox(ctx, *row.ProviderRef); err != nil {
+		outcome = "provider_failure"
+		s.recordProviderFailure("stop_sandbox", providerFailureCategory(err))
 		_, _ = s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
 			ExternalID: row.ExternalID,
 			State:      StateFailed,
@@ -184,6 +225,7 @@ func (s *Service) StopContainer(ctx context.Context, externalID string) (*Contai
 
 	stoppedState, err := NextState(stoppingState, TransitionStopCompleted)
 	if err != nil {
+		outcome = "state_conflict"
 		return nil, err
 	}
 	now := time.Now().UTC()
@@ -198,31 +240,46 @@ func (s *Service) StopContainer(ctx context.Context, externalID string) (*Contai
 	}, stoppingState)
 	if err != nil {
 		if errors.Is(err, repository.ErrStateConflict) {
+			outcome = "state_conflict"
 			return nil, fmt.Errorf("%w: stop completion transition race", ErrStateConflict)
 		}
 		return nil, fmt.Errorf("persist stopped state: %w", err)
 	}
+	outcome = "success"
+	s.refreshContainerCountMetrics(ctx)
 	return mapContainer(updated), nil
 }
 
 func (s *Service) StartContainer(ctx context.Context, externalID string) (*ContainerView, error) {
+	started := time.Now()
+	outcome := "internal_error"
+	defer func() {
+		s.observeLifecycle("start", outcome, time.Since(started))
+	}()
+
 	if err := s.ensureCapacityForStart(ctx); err != nil {
+		if errors.Is(err, ErrCapacityExceeded) {
+			outcome = "capacity_rejected"
+		}
 		return nil, err
 	}
 
 	row, err := s.repo.GetByExternalID(ctx, externalID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
+			outcome = "not_found"
 			return nil, ErrContainerNotFound
 		}
 		return nil, fmt.Errorf("load metadata row: %w", err)
 	}
 	if row.ProviderRef == nil || *row.ProviderRef == "" {
+		outcome = "state_conflict"
 		return nil, fmt.Errorf("%w: missing provider reference", ErrStateConflict)
 	}
 
 	startingState, err := NextState(row.State, TransitionStartRequested)
 	if err != nil {
+		outcome = "state_conflict"
 		return nil, err
 	}
 	if _, err := s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
@@ -230,12 +287,15 @@ func (s *Service) StartContainer(ctx context.Context, externalID string) (*Conta
 		State:      startingState,
 	}, row.State); err != nil {
 		if errors.Is(err, repository.ErrStateConflict) {
+			outcome = "state_conflict"
 			return nil, fmt.Errorf("%w: start transition race", ErrStateConflict)
 		}
 		return nil, fmt.Errorf("persist starting state: %w", err)
 	}
 
 	if err := s.provider.StartSandbox(ctx, *row.ProviderRef); err != nil {
+		outcome = "provider_failure"
+		s.recordProviderFailure("start_sandbox", providerFailureCategory(err))
 		if failedState, stateErr := NextState(startingState, TransitionStartFailed); stateErr == nil {
 			_, _ = s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
 				ExternalID: row.ExternalID,
@@ -247,6 +307,7 @@ func (s *Service) StartContainer(ctx context.Context, externalID string) (*Conta
 
 	runningState, err := NextState(startingState, TransitionStartCompleted)
 	if err != nil {
+		outcome = "state_conflict"
 		return nil, err
 	}
 	now := time.Now().UTC()
@@ -264,27 +325,39 @@ func (s *Service) StartContainer(ctx context.Context, externalID string) (*Conta
 	}, startingState)
 	if err != nil {
 		if errors.Is(err, repository.ErrStateConflict) {
+			outcome = "state_conflict"
 			return nil, fmt.Errorf("%w: start completion transition race", ErrStateConflict)
 		}
 		return nil, fmt.Errorf("persist running state from start: %w", err)
 	}
+	outcome = "success"
+	s.refreshContainerCountMetrics(ctx)
 	return mapContainer(updated), nil
 }
 
 func (s *Service) PruneContainer(ctx context.Context, externalID string) (*ContainerView, error) {
+	started := time.Now()
+	outcome := "internal_error"
+	defer func() {
+		s.observeLifecycle("prune", outcome, time.Since(started))
+	}()
+
 	row, err := s.repo.GetByExternalID(ctx, externalID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
+			outcome = "not_found"
 			return nil, ErrContainerNotFound
 		}
 		return nil, fmt.Errorf("load metadata row: %w", err)
 	}
 	if row.ProviderRef == nil || *row.ProviderRef == "" {
+		outcome = "state_conflict"
 		return nil, fmt.Errorf("%w: missing provider reference", ErrStateConflict)
 	}
 
 	pruningState, err := NextState(row.State, TransitionPruneRequested)
 	if err != nil {
+		outcome = "state_conflict"
 		return nil, err
 	}
 	if _, err := s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
@@ -292,12 +365,15 @@ func (s *Service) PruneContainer(ctx context.Context, externalID string) (*Conta
 		State:      pruningState,
 	}, row.State); err != nil {
 		if errors.Is(err, repository.ErrStateConflict) {
+			outcome = "state_conflict"
 			return nil, fmt.Errorf("%w: prune transition race", ErrStateConflict)
 		}
 		return nil, fmt.Errorf("persist pruning state: %w", err)
 	}
 
 	if err := s.provider.PruneSandbox(ctx, *row.ProviderRef); err != nil {
+		outcome = "provider_failure"
+		s.recordProviderFailure("prune_sandbox", providerFailureCategory(err))
 		if failedState, stateErr := NextState(pruningState, TransitionPruneFailed); stateErr == nil {
 			nextRetryAt := time.Now().UTC().Add(backoffForRetry(row.PruneRetryCount))
 			retryCount := row.PruneRetryCount + 1
@@ -315,6 +391,7 @@ func (s *Service) PruneContainer(ctx context.Context, externalID string) (*Conta
 
 	prunedState, err := NextState(pruningState, TransitionPruneCompleted)
 	if err != nil {
+		outcome = "state_conflict"
 		return nil, err
 	}
 	updated, err := s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
@@ -330,10 +407,13 @@ func (s *Service) PruneContainer(ctx context.Context, externalID string) (*Conta
 	}, pruningState)
 	if err != nil {
 		if errors.Is(err, repository.ErrStateConflict) {
+			outcome = "state_conflict"
 			return nil, fmt.Errorf("%w: prune completion transition race", ErrStateConflict)
 		}
 		return nil, fmt.Errorf("persist pruned state: %w", err)
 	}
+	outcome = "success"
+	s.refreshContainerCountMetrics(ctx)
 	return mapContainer(updated), nil
 }
 
@@ -367,6 +447,44 @@ func intPtr(v int) *int {
 	return &v
 }
 
+func providerFailureCategory(err error) string {
+	switch {
+	case errors.Is(err, types.ErrProviderUnavailable):
+		return "provider_unavailable"
+	case errors.Is(err, types.ErrProviderTimeout):
+		return "provider_timeout"
+	case errors.Is(err, types.ErrProviderConflict):
+		return "provider_conflict"
+	case errors.Is(err, types.ErrProviderNotFound):
+		return "provider_not_found"
+	case errors.Is(err, types.ErrProviderDenied):
+		return "provider_denied"
+	case errors.Is(err, types.ErrProviderQuotaExceeded):
+		return "provider_quota"
+	default:
+		return "provider_internal"
+	}
+}
+
+func (s *Service) refreshContainerCountMetrics(ctx context.Context) {
+	if s.metrics == nil {
+		return
+	}
+	running, err := s.repo.CountByState(ctx, StateRunning)
+	if err != nil {
+		return
+	}
+	stopped, err := s.repo.CountByState(ctx, StateStopped)
+	if err != nil {
+		return
+	}
+	total, err := s.repo.CountTotal(ctx)
+	if err != nil {
+		return
+	}
+	s.metrics.SetContainerCounts(running, stopped, total)
+}
+
 func (s *Service) ensureCapacityForCreate(ctx context.Context) error {
 	if s.cfg.RunningContainerLimit <= 0 && s.cfg.TotalContainerLimit <= 0 {
 		return nil
@@ -382,14 +500,20 @@ func (s *Service) ensureCapacityForCreate(ctx context.Context) error {
 	}
 
 	if s.cfg.TotalContainerLimit > 0 && totalCount >= s.cfg.TotalContainerLimit {
+		s.recordCapacityEvent("admission", "total_limit_reached")
 		if reclaimed := s.reclaimOneForTotal(ctx); !reclaimed {
+			s.recordCapacityEvent("reclaim_total", "failed")
 			return fmt.Errorf("%w: total container limit reached", ErrCapacityExceeded)
 		}
+		s.recordCapacityEvent("reclaim_total", "succeeded")
 	}
 	if s.cfg.RunningContainerLimit > 0 && runningCount >= s.cfg.RunningContainerLimit {
+		s.recordCapacityEvent("admission", "running_limit_reached")
 		if reclaimed := s.reclaimOneForRunning(ctx); !reclaimed {
+			s.recordCapacityEvent("reclaim_running", "failed")
 			return fmt.Errorf("%w: running container limit reached", ErrCapacityExceeded)
 		}
+		s.recordCapacityEvent("reclaim_running", "succeeded")
 	}
 	return nil
 }
@@ -405,9 +529,12 @@ func (s *Service) ensureCapacityForStart(ctx context.Context) error {
 	if runningCount < s.cfg.RunningContainerLimit {
 		return nil
 	}
+	s.recordCapacityEvent("admission", "running_limit_reached")
 	if reclaimed := s.reclaimOneForRunning(ctx); !reclaimed {
+		s.recordCapacityEvent("reclaim_running", "failed")
 		return fmt.Errorf("%w: running container limit reached", ErrCapacityExceeded)
 	}
+	s.recordCapacityEvent("reclaim_running", "succeeded")
 	return nil
 }
 
@@ -441,4 +568,25 @@ func (s *Service) reclaimOneForRunning(ctx context.Context) bool {
 		return stopErr == nil
 	}
 	return false
+}
+
+func (s *Service) observeLifecycle(operation string, outcome string, d time.Duration) {
+	if s.metrics == nil {
+		return
+	}
+	s.metrics.ObserveLifecycle(operation, outcome, d)
+}
+
+func (s *Service) recordCapacityEvent(event string, outcome string) {
+	if s.metrics == nil {
+		return
+	}
+	s.metrics.RecordCapacityEvent(event, outcome)
+}
+
+func (s *Service) recordProviderFailure(operation string, category string) {
+	if s.metrics == nil {
+		return
+	}
+	s.metrics.RecordProviderFailure(operation, category)
 }

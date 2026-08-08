@@ -102,16 +102,15 @@ func run() error {
 	}()
 
 	containerRepo := repository.NewEntContainerRepository(repoClient.Ent)
+	metricsRegistry := metrics.New()
 	idempotencySvc := idempotency.NewService(containerRepo, cfg.IdempotencyTTL)
-	lifecycleSvc := lifecycle.NewService(containerRepo, dockerProvider, cfg)
-	executionSvc := execution.NewService(containerRepo, dockerProvider, cfg)
-	fileSvc := filesvc.NewService(containerRepo, dockerProvider, cfg)
+	lifecycleSvc := lifecycle.NewService(containerRepo, dockerProvider, cfg, metricsRegistry)
+	executionSvc := execution.NewService(containerRepo, dockerProvider, cfg, metricsRegistry)
+	fileSvc := filesvc.NewService(containerRepo, dockerProvider, cfg, metricsRegistry)
 	containerHandler := handlers.NewContainerHandler(lifecycleSvc, idempotencySvc)
 	executionHandler := handlers.NewExecutionHandler(executionSvc)
 	fileHandler := handlers.NewFileHandler(fileSvc, cfg.FileMaxUploadBytes, idempotencySvc)
-	authMw := middleware.Auth(keyManager)
-
-	metricsRegistry := metrics.New()
+	authMw := middleware.Auth(keyManager, metricsRegistry)
 	handler := server.NewHandler(metricsRegistry, authMw, containerHandler, executionHandler, fileHandler)
 	apiServer := server.New(cfg, logger, handler)
 	reconcileWorker := reconcile.NewWorker(
@@ -126,6 +125,7 @@ func run() error {
 		cfg.IdleStopTimeout,
 		cfg.StoppedRetentionTimeout,
 		cfg.ReconcileLockKey,
+		metricsRegistry,
 	)
 
 	signalCh := make(chan os.Signal, 1)

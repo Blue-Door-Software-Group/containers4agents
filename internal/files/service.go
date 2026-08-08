@@ -12,6 +12,8 @@ import (
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/config"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/lifecycle"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/metadata/repository"
+	obslog "github.com/Blue-Door-Software-Group/containers4agents/internal/observability/logging"
+	obsmetrics "github.com/Blue-Door-Software-Group/containers4agents/internal/observability/metrics"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/provider/types"
 )
 
@@ -29,6 +31,7 @@ type Service struct {
 	repo     repository.ContainerRepository
 	provider types.ContainerProvider
 	cfg      config.Config
+	metrics  *obsmetrics.Metrics
 }
 
 type Manifest struct {
@@ -39,25 +42,41 @@ type Manifest struct {
 	WorkspaceFileCount int64
 }
 
-func NewService(repo repository.ContainerRepository, provider types.ContainerProvider, cfg config.Config) *Service {
+func NewService(repo repository.ContainerRepository, provider types.ContainerProvider, cfg config.Config, metrics ...*obsmetrics.Metrics) *Service {
+	var m *obsmetrics.Metrics
+	if len(metrics) > 0 {
+		m = metrics[0]
+	}
 	return &Service{
 		repo:     repo,
 		provider: provider,
 		cfg:      cfg,
+		metrics:  m,
 	}
 }
 
 func (s *Service) Upload(ctx context.Context, externalID string, requestedPath string, content io.Reader) error {
+	started := time.Now()
+	outcome := "internal_error"
+	countingReader := &countingReader{reader: content}
+	defer func() {
+		s.observeFileTransfer("upload", outcome, countingReader.read, time.Since(started))
+	}()
+
 	path, row, providerRef, err := s.resolvePathAndContainer(ctx, externalID, requestedPath)
 	if err != nil {
+		outcome = mapFileOutcome(err)
 		return err
 	}
 
 	usage, err := s.provider.ReadUsage(ctx, providerRef)
 	if err != nil {
+		outcome = "provider_failure"
+		s.recordProviderFailure("files.read_usage", providerFailureCategory(err))
 		return s.mapProviderErr(err)
 	}
 	if s.cfg.ContainerFileCountMax > 0 && usage.FileCount >= s.cfg.ContainerFileCountMax {
+		outcome = "quota"
 		return fmt.Errorf("%w: file count limit reached", ErrPayloadTooLarge)
 	}
 
@@ -65,6 +84,7 @@ func (s *Service) Upload(ctx context.Context, externalID string, requestedPath s
 	if s.cfg.WorkspaceDiskQuotaBytes > 0 {
 		remainingQuota = s.cfg.WorkspaceDiskQuotaBytes - usage.WorkspaceBytes
 		if remainingQuota <= 0 {
+			outcome = "quota"
 			return ErrDiskQuotaExceeded
 		}
 	}
@@ -73,37 +93,54 @@ func (s *Service) Upload(ctx context.Context, externalID string, requestedPath s
 		uploadLimit = remainingQuota
 	}
 
-	limitedReader := newMaxBytesReader(content, uploadLimit)
+	limitedReader := newMaxBytesReader(countingReader, uploadLimit)
 
 	if err := s.provider.UploadFile(ctx, providerRef, path, limitedReader); err != nil {
 		if errors.Is(err, errExceededMaxBytes) {
 			if uploadLimit == remainingQuota {
+				outcome = "quota"
 				return ErrDiskQuotaExceeded
 			}
+			outcome = "payload_too_large"
 			return fmt.Errorf("%w: file payload exceeds configured limit", ErrPayloadTooLarge)
 		}
+		outcome = "provider_failure"
+		s.recordProviderFailure("files.upload", providerFailureCategory(err))
 		return s.mapProviderErr(err)
 	}
 	s.touchActivity(ctx, row.ExternalID, row.State)
+	outcome = "success"
 	return nil
 }
 
 func (s *Service) Download(ctx context.Context, externalID string, requestedPath string, dst io.Writer) error {
+	started := time.Now()
+	outcome := "internal_error"
+	countingWriter := &countingWriter{writer: dst}
+	defer func() {
+		s.observeFileTransfer("download", outcome, countingWriter.written, time.Since(started))
+	}()
+
 	path, row, providerRef, err := s.resolvePathAndContainer(ctx, externalID, requestedPath)
 	if err != nil {
+		outcome = mapFileOutcome(err)
 		return err
 	}
 
-	limitedWriter := newMaxBytesWriter(dst, int64(s.cfg.FileMaxDownloadBytes))
+	limitedWriter := newMaxBytesWriter(countingWriter, int64(s.cfg.FileMaxDownloadBytes))
 	err = s.provider.DownloadFile(ctx, providerRef, path, limitedWriter)
 	if err != nil {
 		if errors.Is(err, errExceededMaxBytes) {
+			outcome = "payload_too_large"
 			return fmt.Errorf("%w: file payload exceeds configured limit", ErrPayloadTooLarge)
 		}
+		outcome = "provider_failure"
+		s.recordProviderFailure("files.download", providerFailureCategory(err))
 		return s.mapProviderErr(err)
 	}
 
 	s.touchActivity(ctx, row.ExternalID, row.State)
+	outcome = "success"
 	return nil
 }
 
@@ -114,6 +151,7 @@ func (s *Service) Delete(ctx context.Context, externalID string, requestedPath s
 	}
 
 	if err := s.provider.DeletePath(ctx, providerRef, path); err != nil {
+		s.recordProviderFailure("files.delete", providerFailureCategory(err))
 		return s.mapProviderErr(err)
 	}
 	s.touchActivity(ctx, row.ExternalID, row.State)
@@ -128,10 +166,12 @@ func (s *Service) Manifest(ctx context.Context, externalID string) (*Manifest, e
 
 	entries, err := s.provider.ListWorkspace(ctx, providerRef)
 	if err != nil {
+		s.recordProviderFailure("files.list_workspace", providerFailureCategory(err))
 		return nil, s.mapProviderErr(err)
 	}
 	usage, err := s.provider.ReadUsage(ctx, providerRef)
 	if err != nil {
+		s.recordProviderFailure("files.read_usage", providerFailureCategory(err))
 		return nil, s.mapProviderErr(err)
 	}
 
@@ -146,6 +186,7 @@ func (s *Service) Manifest(ctx context.Context, externalID string) (*Manifest, e
 	})
 
 	s.touchActivity(ctx, row.ExternalID, row.State)
+	s.observeWorkspaceUsage(usage.WorkspaceBytes, usage.FileCount)
 	return &Manifest{
 		ContainerID:        row.ExternalID,
 		Entries:            entries,
@@ -231,7 +272,7 @@ func (s *Service) touchActivity(ctx context.Context, externalID string, expected
 		RetentionPruneDeadlineAt: params.RetentionPruneDeadlineAt,
 	}, expectedState)
 	if updateErr != nil && !errors.Is(updateErr, repository.ErrStateConflict) && !errors.Is(updateErr, repository.ErrNotFound) {
-		slog.WarnContext(ctx, "failed to persist file-operation activity timestamp", "external_id", externalID, "error", updateErr)
+		obslog.WithRequestID(ctx, slog.Default()).WarnContext(ctx, "failed to persist file-operation activity timestamp", "component", "files", "operation", "touch_activity", "error_category", obslog.ErrorCategory(updateErr))
 	}
 }
 
@@ -273,6 +314,89 @@ type maxBytesWriter struct {
 	writer   io.Writer
 	maxBytes int64
 	written  int64
+}
+
+type countingReader struct {
+	reader io.Reader
+	read   int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.reader.Read(p)
+	c.read += int64(n)
+	return n, err
+}
+
+type countingWriter struct {
+	writer  io.Writer
+	written int64
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	n, err := c.writer.Write(p)
+	c.written += int64(n)
+	return n, err
+}
+
+func providerFailureCategory(err error) string {
+	switch {
+	case errors.Is(err, types.ErrProviderUnavailable):
+		return "provider_unavailable"
+	case errors.Is(err, types.ErrProviderTimeout):
+		return "provider_timeout"
+	case errors.Is(err, types.ErrProviderConflict):
+		return "provider_conflict"
+	case errors.Is(err, types.ErrProviderNotFound):
+		return "provider_not_found"
+	case errors.Is(err, types.ErrProviderDenied):
+		return "provider_denied"
+	case errors.Is(err, types.ErrProviderQuotaExceeded):
+		return "provider_quota"
+	default:
+		return "provider_internal"
+	}
+}
+
+func mapFileOutcome(err error) string {
+	switch {
+	case err == nil:
+		return "success"
+	case errors.Is(err, ErrContainerNotFound), errors.Is(err, ErrFileNotFound):
+		return "not_found"
+	case errors.Is(err, ErrPathViolation):
+		return "path_violation"
+	case errors.Is(err, ErrPayloadTooLarge):
+		return "payload_too_large"
+	case errors.Is(err, ErrDiskQuotaExceeded):
+		return "quota"
+	case errors.Is(err, ErrStateConflict):
+		return "state_conflict"
+	case errors.Is(err, ErrProviderFailure):
+		return "provider_failure"
+	default:
+		return "internal_error"
+	}
+}
+
+func (s *Service) recordProviderFailure(operation string, category string) {
+	if s.metrics == nil {
+		return
+	}
+	s.metrics.RecordProviderFailure(operation, category)
+}
+
+func (s *Service) observeFileTransfer(direction string, outcome string, bytes int64, d time.Duration) {
+	if s.metrics == nil {
+		return
+	}
+	s.metrics.ObserveFileTransfer(direction, outcome, bytes, d)
+}
+
+func (s *Service) observeWorkspaceUsage(bytes int64, files int64) {
+	if s.metrics == nil {
+		return
+	}
+	s.metrics.ObserveWorkspaceUsage(bytes, files)
 }
 
 func newMaxBytesWriter(writer io.Writer, maxBytes int64) *maxBytesWriter {

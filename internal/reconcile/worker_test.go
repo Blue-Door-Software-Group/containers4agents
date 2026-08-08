@@ -9,6 +9,8 @@ import (
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/lifecycle"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/metadata/repository"
 	obslog "github.com/Blue-Door-Software-Group/containers4agents/internal/observability/logging"
+	obsmetrics "github.com/Blue-Door-Software-Group/containers4agents/internal/observability/metrics"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 type fakeRepo struct {
@@ -120,5 +122,33 @@ func TestRunExitsOnContextCancel(t *testing.T) {
 	cancel()
 	if err := w.Run(ctx); err != nil {
 		t.Fatalf("expected clean cancel exit, got %v", err)
+	}
+}
+
+func TestReconcileRecordsMetrics(t *testing.T) {
+	m := obsmetrics.New()
+	w := &Worker{
+		repo:             fakeRepo{},
+		lifecycle:        noopLifecycle{},
+		logger:           obslog.New("error"),
+		enabled:          true,
+		distributed:      false,
+		interval:         time.Second,
+		followerRetry:    time.Second,
+		idleStopTimeout:  time.Minute,
+		retentionTimeout: time.Hour,
+		metrics:          m,
+	}
+
+	w.reconcileOnce(context.Background())
+
+	if got := testutil.ToFloat64(m.ReconcileRuns.WithLabelValues("started")); got != 1 {
+		t.Fatalf("expected started reconcile run metric 1, got %v", got)
+	}
+	if got := testutil.ToFloat64(m.ReconcileRuns.WithLabelValues("completed")); got != 1 {
+		t.Fatalf("expected completed reconcile run metric 1, got %v", got)
+	}
+	if got := testutil.ToFloat64(m.ReconcileActions.WithLabelValues("cleanup_idempotency", "success")); got != 1 {
+		t.Fatalf("expected cleanup success metric 1, got %v", got)
 	}
 }
