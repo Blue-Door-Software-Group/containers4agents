@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -14,8 +15,8 @@ import (
 )
 
 type FileService interface {
-	Upload(ctx context.Context, externalID string, requestedPath string, content []byte) error
-	Download(ctx context.Context, externalID string, requestedPath string) ([]byte, error)
+	Upload(ctx context.Context, externalID string, requestedPath string, content io.Reader) error
+	Download(ctx context.Context, externalID string, requestedPath string, dst io.Writer) error
 	Delete(ctx context.Context, externalID string, requestedPath string) error
 	Manifest(ctx context.Context, externalID string) (*files.Manifest, error)
 }
@@ -66,17 +67,8 @@ func (h *FileHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	content, err := io.ReadAll(io.LimitReader(r.Body, int64(h.maxUploadBytes)+1))
-	if err != nil {
-		apierrors.Write(w, middleware.GetRequestID(r.Context()), apierrors.BadRequest("invalid upload request body"))
-		return
-	}
-	if len(content) > h.maxUploadBytes {
-		apierrors.Write(w, middleware.GetRequestID(r.Context()), apierrors.PayloadTooLarge("upload exceeds configured size limit"))
-		return
-	}
-
-	if err := h.service.Upload(r.Context(), externalID, requestedPath, content); err != nil {
+	uploadReader := io.LimitReader(r.Body, int64(h.maxUploadBytes)+1)
+	if err := h.service.Upload(r.Context(), externalID, requestedPath, uploadReader); err != nil {
 		writeFileError(w, r, err)
 		return
 	}
@@ -96,15 +88,16 @@ func (h *FileHandler) Download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	content, err := h.service.Download(r.Context(), externalID, requestedPath)
-	if err != nil {
-		writeFileError(w, r, err)
-		return
-	}
-
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(content)
+	tracker := &streamWriteTracker{writer: w}
+	err := h.service.Download(r.Context(), externalID, requestedPath, tracker)
+	if err != nil {
+		if !tracker.wrote {
+			writeFileError(w, r, err)
+			return
+		}
+		slog.WarnContext(r.Context(), "file download stream failed after response write started", "container_id", externalID, "path", requestedPath, "error", err)
+	}
 }
 
 func (h *FileHandler) Delete(w http.ResponseWriter, r *http.Request) {
@@ -187,4 +180,17 @@ func writeFileError(w http.ResponseWriter, r *http.Request, err error) {
 	default:
 		apierrors.Write(w, requestID, apierrors.Internal("internal file operation error"))
 	}
+}
+
+type streamWriteTracker struct {
+	writer io.Writer
+	wrote  bool
+}
+
+func (t *streamWriteTracker) Write(p []byte) (int, error) {
+	n, err := t.writer.Write(p)
+	if n > 0 {
+		t.wrote = true
+	}
+	return n, err
 }

@@ -1,8 +1,10 @@
 package files
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"testing"
 	"time"
 
@@ -40,8 +42,8 @@ func (f fakeRepo) BeginExecution(context.Context, string, string) error { return
 func (f fakeRepo) EndExecution(context.Context, string) error           { return nil }
 
 type fakeProvider struct {
-	uploadFn        func(context.Context, string, string, []byte) error
-	downloadFn      func(context.Context, string, string) ([]byte, error)
+	uploadFn        func(context.Context, string, string, io.Reader) error
+	downloadFn      func(context.Context, string, string, io.Writer) error
 	deleteFn        func(context.Context, string, string) error
 	listWorkspaceFn func(context.Context, string) ([]types.FileEntry, error)
 	readUsageFn     func(context.Context, string) (types.UsageSnapshot, error)
@@ -56,11 +58,11 @@ func (f fakeProvider) PruneSandbox(context.Context, string) error { return nil }
 func (f fakeProvider) Exec(context.Context, string, types.ExecRequest) (types.ExecResult, error) {
 	return types.ExecResult{}, nil
 }
-func (f fakeProvider) UploadFile(ctx context.Context, providerRef string, path string, content []byte) error {
+func (f fakeProvider) UploadFile(ctx context.Context, providerRef string, path string, content io.Reader) error {
 	return f.uploadFn(ctx, providerRef, path, content)
 }
-func (f fakeProvider) DownloadFile(ctx context.Context, providerRef string, path string) ([]byte, error) {
-	return f.downloadFn(ctx, providerRef, path)
+func (f fakeProvider) DownloadFile(ctx context.Context, providerRef string, path string, dst io.Writer) error {
+	return f.downloadFn(ctx, providerRef, path, dst)
 }
 func (f fakeProvider) DeletePath(ctx context.Context, providerRef string, path string) error {
 	return f.deleteFn(ctx, providerRef, path)
@@ -85,8 +87,8 @@ func TestUploadRejectsInvalidState(t *testing.T) {
 			},
 		},
 		fakeProvider{
-			uploadFn:        func(context.Context, string, string, []byte) error { return nil },
-			downloadFn:      func(context.Context, string, string) ([]byte, error) { return nil, nil },
+			uploadFn:        func(context.Context, string, string, io.Reader) error { return nil },
+			downloadFn:      func(context.Context, string, string, io.Writer) error { return nil },
 			deleteFn:        func(context.Context, string, string) error { return nil },
 			listWorkspaceFn: func(context.Context, string) ([]types.FileEntry, error) { return nil, nil },
 			readUsageFn:     func(context.Context, string) (types.UsageSnapshot, error) { return types.UsageSnapshot{}, nil },
@@ -94,7 +96,7 @@ func TestUploadRejectsInvalidState(t *testing.T) {
 		config.Config{FileMaxUploadBytes: 10, FileMaxDownloadBytes: 10, WorkspaceDiskQuotaBytes: 1024},
 	)
 
-	err := svc.Upload(context.Background(), "c1", "a.txt", []byte("x"))
+	err := svc.Upload(context.Background(), "c1", "a.txt", bytes.NewReader([]byte("x")))
 	if err == nil || !errors.Is(err, ErrStateConflict) {
 		t.Fatalf("expected ErrStateConflict, got %v", err)
 	}
@@ -113,8 +115,11 @@ func TestDownloadEnforcesMaxBytes(t *testing.T) {
 			},
 		},
 		fakeProvider{
-			uploadFn:        func(context.Context, string, string, []byte) error { return nil },
-			downloadFn:      func(context.Context, string, string) ([]byte, error) { return []byte("toolong"), nil },
+			uploadFn: func(context.Context, string, string, io.Reader) error { return nil },
+			downloadFn: func(_ context.Context, _ string, _ string, dst io.Writer) error {
+				_, err := dst.Write([]byte("toolong"))
+				return err
+			},
 			deleteFn:        func(context.Context, string, string) error { return nil },
 			listWorkspaceFn: func(context.Context, string) ([]types.FileEntry, error) { return nil, nil },
 			readUsageFn:     func(context.Context, string) (types.UsageSnapshot, error) { return types.UsageSnapshot{}, nil },
@@ -122,7 +127,8 @@ func TestDownloadEnforcesMaxBytes(t *testing.T) {
 		config.Config{FileMaxUploadBytes: 10, FileMaxDownloadBytes: 3, WorkspaceDiskQuotaBytes: 1024},
 	)
 
-	_, err := svc.Download(context.Background(), "c1", "a.txt")
+	var out bytes.Buffer
+	err := svc.Download(context.Background(), "c1", "a.txt", &out)
 	if err == nil || !errors.Is(err, ErrPayloadTooLarge) {
 		t.Fatalf("expected ErrPayloadTooLarge, got %v", err)
 	}
@@ -144,8 +150,8 @@ func TestManifestReturnsSortedEntriesAndUsage(t *testing.T) {
 			},
 		},
 		fakeProvider{
-			uploadFn:   func(context.Context, string, string, []byte) error { return nil },
-			downloadFn: func(context.Context, string, string) ([]byte, error) { return nil, nil },
+			uploadFn:   func(context.Context, string, string, io.Reader) error { return nil },
+			downloadFn: func(context.Context, string, string, io.Writer) error { return nil },
 			deleteFn:   func(context.Context, string, string) error { return nil },
 			listWorkspaceFn: func(context.Context, string) ([]types.FileEntry, error) {
 				return []types.FileEntry{

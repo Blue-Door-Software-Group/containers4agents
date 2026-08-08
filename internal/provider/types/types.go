@@ -2,6 +2,7 @@ package types
 
 import (
 	"context"
+	"io"
 	"time"
 )
 
@@ -58,8 +59,8 @@ type ContainerProvider interface {
 	StopSandbox(ctx context.Context, providerRef string) error
 	PruneSandbox(ctx context.Context, providerRef string) error
 	Exec(ctx context.Context, providerRef string, req ExecRequest) (ExecResult, error)
-	UploadFile(ctx context.Context, providerRef string, path string, content []byte) error
-	DownloadFile(ctx context.Context, providerRef string, path string) ([]byte, error)
+	UploadFile(ctx context.Context, providerRef string, path string, content io.Reader) error
+	DownloadFile(ctx context.Context, providerRef string, path string, dst io.Writer) error
 	DeletePath(ctx context.Context, providerRef string, path string) error
 	ListWorkspace(ctx context.Context, providerRef string) ([]FileEntry, error)
 	ReadUsage(ctx context.Context, providerRef string) (UsageSnapshot, error)

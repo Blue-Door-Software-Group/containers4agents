@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"slices"
 
@@ -44,38 +45,41 @@ func NewService(repo repository.ContainerRepository, provider types.ContainerPro
 	}
 }
 
-func (s *Service) Upload(ctx context.Context, externalID string, requestedPath string, content []byte) error {
+func (s *Service) Upload(ctx context.Context, externalID string, requestedPath string, content io.Reader) error {
 	path, row, providerRef, err := s.resolvePathAndContainer(ctx, externalID, requestedPath)
 	if err != nil {
 		return err
 	}
-	if len(content) > s.cfg.FileMaxUploadBytes {
-		return fmt.Errorf("%w: payload exceeds C4A_FILE_MAX_UPLOAD_BYTES", ErrPayloadTooLarge)
-	}
 
-	if err := s.provider.UploadFile(ctx, providerRef, path, content); err != nil {
+	limitedReader := newMaxBytesReader(content, int64(s.cfg.FileMaxUploadBytes))
+
+	if err := s.provider.UploadFile(ctx, providerRef, path, limitedReader); err != nil {
+		if errors.Is(err, errExceededMaxBytes) {
+			return fmt.Errorf("%w: file payload exceeds configured limit", ErrPayloadTooLarge)
+		}
 		return s.mapProviderErr(err)
 	}
 	s.touchActivity(ctx, row.ExternalID, row.State)
 	return nil
 }
 
-func (s *Service) Download(ctx context.Context, externalID string, requestedPath string) ([]byte, error) {
+func (s *Service) Download(ctx context.Context, externalID string, requestedPath string, dst io.Writer) error {
 	path, row, providerRef, err := s.resolvePathAndContainer(ctx, externalID, requestedPath)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	content, err := s.provider.DownloadFile(ctx, providerRef, path)
+	limitedWriter := newMaxBytesWriter(dst, int64(s.cfg.FileMaxDownloadBytes))
+	err = s.provider.DownloadFile(ctx, providerRef, path, limitedWriter)
 	if err != nil {
-		return nil, s.mapProviderErr(err)
-	}
-	if len(content) > s.cfg.FileMaxDownloadBytes {
-		return nil, fmt.Errorf("%w: payload exceeds C4A_FILE_MAX_DOWNLOAD_BYTES", ErrPayloadTooLarge)
+		if errors.Is(err, errExceededMaxBytes) {
+			return fmt.Errorf("%w: file payload exceeds configured limit", ErrPayloadTooLarge)
+		}
+		return s.mapProviderErr(err)
 	}
 
 	s.touchActivity(ctx, row.ExternalID, row.State)
-	return content, nil
+	return nil
 }
 
 func (s *Service) Delete(ctx context.Context, externalID string, requestedPath string) error {
@@ -186,4 +190,73 @@ func (s *Service) touchActivity(ctx context.Context, externalID string, expected
 	if updateErr != nil && !errors.Is(updateErr, repository.ErrStateConflict) && !errors.Is(updateErr, repository.ErrNotFound) {
 		slog.WarnContext(ctx, "failed to persist file-operation activity timestamp", "external_id", externalID, "error", updateErr)
 	}
+}
+
+var errExceededMaxBytes = errors.New("exceeded max bytes")
+
+type maxBytesReader struct {
+	reader   io.Reader
+	maxBytes int64
+	read     int64
+}
+
+func newMaxBytesReader(reader io.Reader, maxBytes int64) *maxBytesReader {
+	return &maxBytesReader{
+		reader:   reader,
+		maxBytes: maxBytes,
+	}
+}
+
+func (r *maxBytesReader) Read(p []byte) (int, error) {
+	if r.maxBytes <= 0 {
+		return 0, errExceededMaxBytes
+	}
+	remaining := r.maxBytes - r.read
+	if remaining <= 0 {
+		return 0, errExceededMaxBytes
+	}
+	if int64(len(p)) > remaining {
+		p = p[:remaining]
+	}
+	n, err := r.reader.Read(p)
+	r.read += int64(n)
+	if err == io.EOF && r.read > r.maxBytes {
+		return n, errExceededMaxBytes
+	}
+	return n, err
+}
+
+type maxBytesWriter struct {
+	writer   io.Writer
+	maxBytes int64
+	written  int64
+}
+
+func newMaxBytesWriter(writer io.Writer, maxBytes int64) *maxBytesWriter {
+	return &maxBytesWriter{
+		writer:   writer,
+		maxBytes: maxBytes,
+	}
+}
+
+func (w *maxBytesWriter) Write(p []byte) (int, error) {
+	if w.maxBytes <= 0 {
+		return 0, errExceededMaxBytes
+	}
+	remaining := w.maxBytes - w.written
+	if remaining <= 0 {
+		return 0, errExceededMaxBytes
+	}
+	if int64(len(p)) > remaining {
+		p = p[:remaining]
+		n, err := w.writer.Write(p)
+		w.written += int64(n)
+		if err != nil {
+			return n, err
+		}
+		return n, errExceededMaxBytes
+	}
+	n, err := w.writer.Write(p)
+	w.written += int64(n)
+	return n, err
 }

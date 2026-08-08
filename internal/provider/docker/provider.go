@@ -134,7 +134,7 @@ func (p *Provider) Exec(ctx context.Context, providerRef string, req types.ExecR
 	return types.ExecResult{}, mapDockerErr(fmt.Errorf("docker %s: %w", strings.Join(args, " "), err))
 }
 
-func (p *Provider) UploadFile(ctx context.Context, providerRef string, path string, content []byte) error {
+func (p *Provider) UploadFile(ctx context.Context, providerRef string, path string, content io.Reader) error {
 	if providerRef == "" {
 		return fmt.Errorf("%w: missing provider reference", types.ErrProviderInternal)
 	}
@@ -158,19 +158,22 @@ func (p *Provider) UploadFile(ctx context.Context, providerRef string, path stri
 		`cat > "$final"`,
 	}, "; ")
 
-	_, stderr, err := p.runDockerCommand(ctx, content, "exec", "-i", providerRef, "sh", "-lc", script, "--", path)
+	_, stderr, err := p.runDockerCommand(ctx, content, nil, false, "exec", "-i", providerRef, "sh", "-lc", script, "--", path)
 	if err != nil {
 		return p.mapFileOpErr(err, stderr, "upload", path)
 	}
 	return nil
 }
 
-func (p *Provider) DownloadFile(ctx context.Context, providerRef string, path string) ([]byte, error) {
+func (p *Provider) DownloadFile(ctx context.Context, providerRef string, path string, dst io.Writer) error {
 	if providerRef == "" {
-		return nil, fmt.Errorf("%w: missing provider reference", types.ErrProviderInternal)
+		return fmt.Errorf("%w: missing provider reference", types.ErrProviderInternal)
 	}
 	if path == "" {
-		return nil, fmt.Errorf("%w: missing file path", types.ErrProviderInternal)
+		return fmt.Errorf("%w: missing file path", types.ErrProviderInternal)
+	}
+	if dst == nil {
+		return fmt.Errorf("%w: missing destination writer", types.ErrProviderInternal)
 	}
 
 	script := strings.Join([]string{
@@ -184,11 +187,11 @@ func (p *Provider) DownloadFile(ctx context.Context, providerRef string, path st
 		`cat "$resolved"`,
 	}, "; ")
 
-	stdout, stderr, err := p.runDockerCommand(ctx, nil, "exec", providerRef, "sh", "-lc", script, "--", path)
+	_, stderr, err := p.runDockerCommand(ctx, nil, dst, false, "exec", providerRef, "sh", "-lc", script, "--", path)
 	if err != nil {
-		return nil, p.mapFileOpErr(err, stderr, "download", path)
+		return p.mapFileOpErr(err, stderr, "download", path)
 	}
-	return stdout, nil
+	return nil
 }
 
 func (p *Provider) DeletePath(ctx context.Context, providerRef string, path string) error {
@@ -210,7 +213,7 @@ func (p *Provider) DeletePath(ctx context.Context, providerRef string, path stri
 		`rm -rf -- "$resolved"`,
 	}, "; ")
 
-	_, stderr, err := p.runDockerCommand(ctx, nil, "exec", providerRef, "sh", "-lc", script, "--", path)
+	_, stderr, err := p.runDockerCommand(ctx, nil, nil, false, "exec", providerRef, "sh", "-lc", script, "--", path)
 	if err != nil {
 		return p.mapFileOpErr(err, stderr, "delete", path)
 	}
@@ -241,7 +244,7 @@ func (p *Provider) ListWorkspace(ctx context.Context, providerRef string) ([]typ
 		`done`,
 	}, "; ")
 
-	stdout, stderr, err := p.runDockerCommand(ctx, nil, "exec", providerRef, "sh", "-lc", script)
+	stdout, stderr, err := p.runDockerCommand(ctx, nil, nil, true, "exec", providerRef, "sh", "-lc", script)
 	if err != nil {
 		return nil, p.mapFileOpErr(err, stderr, "manifest", "")
 	}
@@ -302,7 +305,7 @@ func (p *Provider) ReadUsage(ctx context.Context, providerRef string) (types.Usa
 		`printf '%s\t%s\n' "$bytes" "$count"`,
 	}, "; ")
 
-	stdout, stderr, err := p.runDockerCommand(ctx, nil, "exec", providerRef, "sh", "-lc", script)
+	stdout, stderr, err := p.runDockerCommand(ctx, nil, nil, true, "exec", providerRef, "sh", "-lc", script)
 	if err != nil {
 		return types.UsageSnapshot{}, p.mapFileOpErr(err, stderr, "usage", "")
 	}
@@ -382,22 +385,41 @@ func (p *Provider) runDocker(ctx context.Context, args ...string) (string, error
 	return string(out), nil
 }
 
-func (p *Provider) runDockerCommand(ctx context.Context, stdin []byte, args ...string) ([]byte, string, error) {
+func (p *Provider) runDockerCommand(
+	ctx context.Context,
+	stdin io.Reader,
+	stdout io.Writer,
+	captureStdout bool,
+	args ...string,
+) ([]byte, string, error) {
 	command := exec.CommandContext(ctx, "docker", args...)
 	if p.host != "" {
 		command.Env = append(os.Environ(), "DOCKER_HOST="+p.host)
 	}
 	if stdin != nil {
-		command.Stdin = bytes.NewReader(stdin)
+		command.Stdin = stdin
 	}
 
-	var stdout bytes.Buffer
+	var stdoutBuffer bytes.Buffer
 	var stderr bytes.Buffer
-	command.Stdout = &stdout
+
+	switch {
+	case stdout != nil && captureStdout:
+		command.Stdout = io.MultiWriter(stdout, &stdoutBuffer)
+	case stdout != nil:
+		command.Stdout = stdout
+	case captureStdout:
+		command.Stdout = &stdoutBuffer
+	default:
+		command.Stdout = io.Discard
+	}
 	command.Stderr = &stderr
 
 	err := command.Run()
-	return stdout.Bytes(), strings.TrimSpace(stderr.String()), err
+	if !captureStdout {
+		return nil, strings.TrimSpace(stderr.String()), err
+	}
+	return stdoutBuffer.Bytes(), strings.TrimSpace(stderr.String()), err
 }
 
 func (p *Provider) mapFileOpErr(err error, stderr string, operation string, path string) error {

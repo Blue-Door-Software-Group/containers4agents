@@ -3,6 +3,7 @@ package lifecycle
 import (
 	"context"
 	"errors"
+	"io"
 	"testing"
 	"time"
 
@@ -64,11 +65,11 @@ func (f fakeProvider) PruneSandbox(context.Context, string) error { return f.pru
 func (f fakeProvider) Exec(context.Context, string, types.ExecRequest) (types.ExecResult, error) {
 	return types.ExecResult{}, types.ErrProviderNotImplemented
 }
-func (f fakeProvider) UploadFile(context.Context, string, string, []byte) error {
+func (f fakeProvider) UploadFile(context.Context, string, string, io.Reader) error {
 	return types.ErrProviderNotImplemented
 }
-func (f fakeProvider) DownloadFile(context.Context, string, string) ([]byte, error) {
-	return nil, types.ErrProviderNotImplemented
+func (f fakeProvider) DownloadFile(context.Context, string, string, io.Writer) error {
+	return types.ErrProviderNotImplemented
 }
 func (f fakeProvider) DeletePath(context.Context, string, string) error {
 	return types.ErrProviderNotImplemented

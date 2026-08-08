@@ -285,17 +285,17 @@ func TestExecRouteMapsConflict(t *testing.T) {
 }
 
 type fakeFileService struct {
-	uploadFn   func(context.Context, string, string, []byte) error
-	downloadFn func(context.Context, string, string) ([]byte, error)
+	uploadFn   func(context.Context, string, string, io.Reader) error
+	downloadFn func(context.Context, string, string, io.Writer) error
 	deleteFn   func(context.Context, string, string) error
 	manifestFn func(context.Context, string) (*files.Manifest, error)
 }
 
-func (f fakeFileService) Upload(ctx context.Context, externalID string, requestedPath string, content []byte) error {
+func (f fakeFileService) Upload(ctx context.Context, externalID string, requestedPath string, content io.Reader) error {
 	return f.uploadFn(ctx, externalID, requestedPath, content)
 }
-func (f fakeFileService) Download(ctx context.Context, externalID string, requestedPath string) ([]byte, error) {
-	return f.downloadFn(ctx, externalID, requestedPath)
+func (f fakeFileService) Download(ctx context.Context, externalID string, requestedPath string, dst io.Writer) error {
+	return f.downloadFn(ctx, externalID, requestedPath, dst)
 }
 func (f fakeFileService) Delete(ctx context.Context, externalID string, requestedPath string) error {
 	return f.deleteFn(ctx, externalID, requestedPath)
@@ -306,20 +306,25 @@ func (f fakeFileService) Manifest(ctx context.Context, externalID string) (*file
 
 func TestFileRouteUploadAndDownload(t *testing.T) {
 	fileHandler := handlers.NewFileHandler(fakeFileService{
-		uploadFn: func(_ context.Context, _ string, path string, content []byte) error {
+		uploadFn: func(_ context.Context, _ string, path string, content io.Reader) error {
+			payload, err := io.ReadAll(content)
+			if err != nil {
+				return err
+			}
 			if path != "dir/a.txt" {
 				t.Fatalf("expected requested path dir/a.txt, got %q", path)
 			}
-			if string(content) != "hello" {
-				t.Fatalf("expected upload payload hello, got %q", string(content))
+			if string(payload) != "hello" {
+				t.Fatalf("expected upload payload hello, got %q", string(payload))
 			}
 			return nil
 		},
-		downloadFn: func(_ context.Context, _ string, path string) ([]byte, error) {
+		downloadFn: func(_ context.Context, _ string, path string, dst io.Writer) error {
 			if path != "dir/a.txt" {
 				t.Fatalf("expected requested path dir/a.txt, got %q", path)
 			}
-			return []byte("hello"), nil
+			_, err := dst.Write([]byte("hello"))
+			return err
 		},
 		deleteFn: func(context.Context, string, string) error { return nil },
 		manifestFn: func(context.Context, string) (*files.Manifest, error) {
@@ -363,9 +368,9 @@ func TestFileRouteUploadAndDownload(t *testing.T) {
 
 func TestFileRouteManifestAndErrors(t *testing.T) {
 	fileHandler := handlers.NewFileHandler(fakeFileService{
-		uploadFn: func(context.Context, string, string, []byte) error { return nil },
-		downloadFn: func(_ context.Context, _ string, _ string) ([]byte, error) {
-			return nil, files.ErrFileNotFound
+		uploadFn: func(context.Context, string, string, io.Reader) error { return nil },
+		downloadFn: func(_ context.Context, _ string, _ string, _ io.Writer) error {
+			return files.ErrFileNotFound
 		},
 		deleteFn: func(context.Context, string, string) error { return nil },
 		manifestFn: func(_ context.Context, externalID string) (*files.Manifest, error) {

@@ -3,6 +3,7 @@ package execution
 import (
 	"context"
 	"errors"
+	"io"
 	"sync"
 	"testing"
 	"time"
@@ -73,11 +74,9 @@ func (f fakeProvider) PruneSandbox(context.Context, string) error { return nil }
 func (f fakeProvider) Exec(ctx context.Context, providerRef string, req types.ExecRequest) (types.ExecResult, error) {
 	return f.execFn(ctx, providerRef, req)
 }
-func (f fakeProvider) UploadFile(context.Context, string, string, []byte) error { return nil }
-func (f fakeProvider) DownloadFile(context.Context, string, string) ([]byte, error) {
-	return nil, nil
-}
-func (f fakeProvider) DeletePath(context.Context, string, string) error { return nil }
+func (f fakeProvider) UploadFile(context.Context, string, string, io.Reader) error   { return nil }
+func (f fakeProvider) DownloadFile(context.Context, string, string, io.Writer) error { return nil }
+func (f fakeProvider) DeletePath(context.Context, string, string) error              { return nil }
 func (f fakeProvider) ListWorkspace(context.Context, string) ([]types.FileEntry, error) {
 	return nil, nil
 }
