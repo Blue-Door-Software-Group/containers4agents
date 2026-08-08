@@ -16,6 +16,7 @@ import (
 var (
 	ErrContainerNotFound = errors.New("container not found")
 	ErrStateConflict     = errors.New("container state conflict")
+	ErrProviderFailure   = errors.New("provider failure")
 )
 
 type Service struct {
@@ -60,20 +61,29 @@ func (s *Service) CreateContainer(ctx context.Context) (*ContainerView, error) {
 		Image:        s.cfg.DockerImage,
 	})
 	if err != nil {
-		_, _ = s.repo.UpdateState(ctx, repository.UpdateStateParams{
-			ExternalID: row.ExternalID,
-			State:      "failed",
-		})
-		return nil, err
+		if failedState, stateErr := NextState(row.State, TransitionCreateFailed); stateErr == nil {
+			_, _ = s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
+				ExternalID: row.ExternalID,
+				State:      failedState,
+			}, row.State)
+		}
+		return nil, fmt.Errorf("%w: create sandbox: %w", ErrProviderFailure, err)
 	}
 
-	updated, err := s.repo.UpdateState(ctx, repository.UpdateStateParams{
+	next, err := NextState(row.State, TransitionCreateSucceeded)
+	if err != nil {
+		return nil, err
+	}
+	updated, err := s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
 		ExternalID:     externalID,
-		State:          providerContainer.State,
+		State:          next,
 		ProviderRef:    &providerContainer.ProviderRef,
 		SetActivityNow: true,
-	})
+	}, row.State)
 	if err != nil {
+		if errors.Is(err, repository.ErrStateConflict) {
+			return nil, fmt.Errorf("%w: create transition race", ErrStateConflict)
+		}
 		return nil, fmt.Errorf("persist running state: %w", err)
 	}
 
@@ -101,14 +111,18 @@ func (s *Service) StopContainer(ctx context.Context, externalID string) (*Contai
 		return nil, fmt.Errorf("load metadata row: %w", err)
 	}
 
-	if row.State != "running" {
-		return nil, fmt.Errorf("%w: expected running, got %s", ErrStateConflict, row.State)
+	stoppingState, err := NextState(row.State, TransitionStopRequested)
+	if err != nil {
+		return nil, err
 	}
 
-	if _, err := s.repo.UpdateState(ctx, repository.UpdateStateParams{
+	if _, err := s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
 		ExternalID: row.ExternalID,
-		State:      "stopping",
-	}); err != nil {
+		State:      stoppingState,
+	}, row.State); err != nil {
+		if errors.Is(err, repository.ErrStateConflict) {
+			return nil, fmt.Errorf("%w: stop transition race", ErrStateConflict)
+		}
 		return nil, fmt.Errorf("persist stopping state: %w", err)
 	}
 
@@ -116,20 +130,135 @@ func (s *Service) StopContainer(ctx context.Context, externalID string) (*Contai
 		return nil, fmt.Errorf("%w: missing provider reference", ErrStateConflict)
 	}
 	if err := s.provider.StopSandbox(ctx, *row.ProviderRef); err != nil {
-		_, _ = s.repo.UpdateState(ctx, repository.UpdateStateParams{
+		_, _ = s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
 			ExternalID: row.ExternalID,
-			State:      "failed",
-		})
-		return nil, err
+			State:      StateFailed,
+		}, stoppingState)
+		return nil, fmt.Errorf("%w: stop sandbox: %w", ErrProviderFailure, err)
 	}
 
-	updated, err := s.repo.UpdateState(ctx, repository.UpdateStateParams{
-		ExternalID:     row.ExternalID,
-		State:          "stopped",
-		SetActivityNow: true,
-	})
+	stoppedState, err := NextState(stoppingState, TransitionStopCompleted)
 	if err != nil {
+		return nil, err
+	}
+	updated, err := s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
+		ExternalID:     row.ExternalID,
+		State:          stoppedState,
+		SetActivityNow: true,
+	}, stoppingState)
+	if err != nil {
+		if errors.Is(err, repository.ErrStateConflict) {
+			return nil, fmt.Errorf("%w: stop completion transition race", ErrStateConflict)
+		}
 		return nil, fmt.Errorf("persist stopped state: %w", err)
+	}
+	return mapContainer(updated), nil
+}
+
+func (s *Service) StartContainer(ctx context.Context, externalID string) (*ContainerView, error) {
+	row, err := s.repo.GetByExternalID(ctx, externalID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrContainerNotFound
+		}
+		return nil, fmt.Errorf("load metadata row: %w", err)
+	}
+	if row.ProviderRef == nil || *row.ProviderRef == "" {
+		return nil, fmt.Errorf("%w: missing provider reference", ErrStateConflict)
+	}
+
+	startingState, err := NextState(row.State, TransitionStartRequested)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
+		ExternalID: row.ExternalID,
+		State:      startingState,
+	}, row.State); err != nil {
+		if errors.Is(err, repository.ErrStateConflict) {
+			return nil, fmt.Errorf("%w: start transition race", ErrStateConflict)
+		}
+		return nil, fmt.Errorf("persist starting state: %w", err)
+	}
+
+	if err := s.provider.StartSandbox(ctx, *row.ProviderRef); err != nil {
+		if failedState, stateErr := NextState(startingState, TransitionStartFailed); stateErr == nil {
+			_, _ = s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
+				ExternalID: row.ExternalID,
+				State:      failedState,
+			}, startingState)
+		}
+		return nil, fmt.Errorf("%w: start sandbox: %w", ErrProviderFailure, err)
+	}
+
+	runningState, err := NextState(startingState, TransitionStartCompleted)
+	if err != nil {
+		return nil, err
+	}
+	updated, err := s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
+		ExternalID:     row.ExternalID,
+		State:          runningState,
+		SetActivityNow: true,
+	}, startingState)
+	if err != nil {
+		if errors.Is(err, repository.ErrStateConflict) {
+			return nil, fmt.Errorf("%w: start completion transition race", ErrStateConflict)
+		}
+		return nil, fmt.Errorf("persist running state from start: %w", err)
+	}
+	return mapContainer(updated), nil
+}
+
+func (s *Service) PruneContainer(ctx context.Context, externalID string) (*ContainerView, error) {
+	row, err := s.repo.GetByExternalID(ctx, externalID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrContainerNotFound
+		}
+		return nil, fmt.Errorf("load metadata row: %w", err)
+	}
+	if row.ProviderRef == nil || *row.ProviderRef == "" {
+		return nil, fmt.Errorf("%w: missing provider reference", ErrStateConflict)
+	}
+
+	pruningState, err := NextState(row.State, TransitionPruneRequested)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
+		ExternalID: row.ExternalID,
+		State:      pruningState,
+	}, row.State); err != nil {
+		if errors.Is(err, repository.ErrStateConflict) {
+			return nil, fmt.Errorf("%w: prune transition race", ErrStateConflict)
+		}
+		return nil, fmt.Errorf("persist pruning state: %w", err)
+	}
+
+	if err := s.provider.PruneSandbox(ctx, *row.ProviderRef); err != nil {
+		if failedState, stateErr := NextState(pruningState, TransitionPruneFailed); stateErr == nil {
+			_, _ = s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
+				ExternalID: row.ExternalID,
+				State:      failedState,
+			}, pruningState)
+		}
+		return nil, fmt.Errorf("%w: prune sandbox: %w", ErrProviderFailure, err)
+	}
+
+	prunedState, err := NextState(pruningState, TransitionPruneCompleted)
+	if err != nil {
+		return nil, err
+	}
+	updated, err := s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
+		ExternalID:     row.ExternalID,
+		State:          prunedState,
+		SetActivityNow: true,
+	}, pruningState)
+	if err != nil {
+		if errors.Is(err, repository.ErrStateConflict) {
+			return nil, fmt.Errorf("%w: prune completion transition race", ErrStateConflict)
+		}
+		return nil, fmt.Errorf("persist pruned state: %w", err)
 	}
 	return mapContainer(updated), nil
 }

@@ -16,6 +16,9 @@ type Provider struct {
 }
 
 func New(host string) (*Provider, error) {
+	if _, err := exec.LookPath("docker"); err != nil {
+		return nil, types.ErrProviderUnavailable
+	}
 	return &Provider{host: host}, nil
 }
 
@@ -72,23 +75,23 @@ func (p *Provider) PruneSandbox(ctx context.Context, providerRef string) error {
 }
 
 func (p *Provider) Exec(ctx context.Context, providerRef string, req types.ExecRequest) (types.ExecResult, error) {
-	return types.ExecResult{}, types.ErrProviderInternal
+	return types.ExecResult{}, types.ErrProviderNotImplemented
 }
 
 func (p *Provider) UploadFile(ctx context.Context, providerRef string, path string, content []byte) error {
-	return types.ErrProviderInternal
+	return types.ErrProviderNotImplemented
 }
 
 func (p *Provider) DownloadFile(ctx context.Context, providerRef string, path string) ([]byte, error) {
-	return nil, types.ErrProviderInternal
+	return nil, types.ErrProviderNotImplemented
 }
 
 func (p *Provider) DeletePath(ctx context.Context, providerRef string, path string) error {
-	return types.ErrProviderInternal
+	return types.ErrProviderNotImplemented
 }
 
 func (p *Provider) ListWorkspace(ctx context.Context, providerRef string) ([]types.FileEntry, error) {
-	return nil, types.ErrProviderInternal
+	return nil, types.ErrProviderNotImplemented
 }
 
 func (p *Provider) ReadUsage(ctx context.Context, providerRef string) (types.UsageSnapshot, error) {

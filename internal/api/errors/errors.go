@@ -78,3 +78,12 @@ func BadRequest(message string) APIError {
 		Retryable: false,
 	}
 }
+
+func ServiceUnavailable(message string) APIError {
+	return APIError{
+		Code:      "provider_unavailable",
+		Message:   message,
+		Status:    http.StatusServiceUnavailable,
+		Retryable: true,
+	}
+}

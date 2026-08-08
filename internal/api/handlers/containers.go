@@ -16,6 +16,8 @@ type ContainerService interface {
 	CreateContainer(ctx context.Context) (*lifecycle.ContainerView, error)
 	GetContainer(ctx context.Context, externalID string) (*lifecycle.ContainerView, error)
 	StopContainer(ctx context.Context, externalID string) (*lifecycle.ContainerView, error)
+	StartContainer(ctx context.Context, externalID string) (*lifecycle.ContainerView, error)
+	PruneContainer(ctx context.Context, externalID string) (*lifecycle.ContainerView, error)
 }
 
 type ContainerHandler struct {
@@ -75,6 +77,36 @@ func (h *ContainerHandler) Stop(w http.ResponseWriter, r *http.Request) {
 	writeContainerResponse(w, http.StatusOK, row)
 }
 
+func (h *ContainerHandler) Start(w http.ResponseWriter, r *http.Request) {
+	externalID := r.PathValue("id")
+	if externalID == "" {
+		apierrors.Write(w, middleware.GetRequestID(r.Context()), apierrors.BadRequest("missing container id"))
+		return
+	}
+
+	row, err := h.service.StartContainer(r.Context(), externalID)
+	if err != nil {
+		writeLifecycleError(w, r, err)
+		return
+	}
+	writeContainerResponse(w, http.StatusOK, row)
+}
+
+func (h *ContainerHandler) Prune(w http.ResponseWriter, r *http.Request) {
+	externalID := r.PathValue("id")
+	if externalID == "" {
+		apierrors.Write(w, middleware.GetRequestID(r.Context()), apierrors.BadRequest("missing container id"))
+		return
+	}
+
+	row, err := h.service.PruneContainer(r.Context(), externalID)
+	if err != nil {
+		writeLifecycleError(w, r, err)
+		return
+	}
+	writeContainerResponse(w, http.StatusOK, row)
+}
+
 func writeContainerResponse(w http.ResponseWriter, status int, row *lifecycle.ContainerView) {
 	resp := containerResponse{
 		ID:           row.ExternalID,
@@ -102,6 +134,8 @@ func writeLifecycleError(w http.ResponseWriter, r *http.Request, err error) {
 		apierrors.Write(w, requestID, apierrors.NotFound("container not found"))
 	case errors.Is(err, lifecycle.ErrStateConflict):
 		apierrors.Write(w, requestID, apierrors.Conflict(err.Error()))
+	case errors.Is(err, lifecycle.ErrProviderFailure):
+		apierrors.Write(w, requestID, apierrors.ServiceUnavailable("container provider unavailable"))
 	default:
 		apierrors.Write(w, requestID, apierrors.Internal("internal lifecycle error"))
 	}

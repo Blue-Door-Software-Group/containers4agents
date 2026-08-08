@@ -7,6 +7,8 @@ import (
 )
 
 type Authorizer interface {
+	// IsAuthorized evaluates the raw Authorization header value.
+	// Implementations are expected to enforce Bearer token semantics.
 	IsAuthorized(authHeader string) bool
 }
 

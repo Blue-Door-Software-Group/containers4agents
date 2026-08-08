@@ -13,6 +13,7 @@ import (
 )
 
 var ErrNotFound = errors.New("container metadata not found")
+var ErrStateConflict = errors.New("container metadata state conflict")
 
 type Container struct {
 	ID             string
@@ -43,6 +44,7 @@ type ContainerRepository interface {
 	Create(ctx context.Context, params CreateParams) (*Container, error)
 	GetByExternalID(ctx context.Context, externalID string) (*Container, error)
 	UpdateState(ctx context.Context, params UpdateStateParams) (*Container, error)
+	UpdateStateIfCurrent(ctx context.Context, params UpdateStateParams, expectedCurrentState string) (*Container, error)
 }
 
 type EntContainerRepository struct {
@@ -105,6 +107,47 @@ func (r *EntContainerRepository) UpdateState(ctx context.Context, params UpdateS
 	return r.GetByExternalID(ctx, params.ExternalID)
 }
 
+func (r *EntContainerRepository) UpdateStateIfCurrent(
+	ctx context.Context,
+	params UpdateStateParams,
+	expectedCurrentState string,
+) (*Container, error) {
+	update := r.client.ContainerMetadata.
+		Update().
+		Where(
+			containermetadata.ExternalIDEQ(params.ExternalID),
+			containermetadata.StateEQ(expectedCurrentState),
+		).
+		SetState(params.State)
+
+	if params.ProviderRef != nil {
+		update.SetProviderRef(*params.ProviderRef)
+	}
+	if params.SetActivityNow {
+		update.SetLastActivityAt(time.Now())
+	}
+
+	count, err := update.Save(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("conditional update container metadata state: %w", err)
+	}
+	if count == 0 {
+		row, getErr := r.GetByExternalID(ctx, params.ExternalID)
+		if getErr != nil {
+			if errors.Is(getErr, ErrNotFound) {
+				return nil, ErrNotFound
+			}
+			return nil, fmt.Errorf("load row after conditional update failure: %w", getErr)
+		}
+		if row.State != expectedCurrentState {
+			return nil, ErrStateConflict
+		}
+		return nil, ErrNotFound
+	}
+
+	return r.GetByExternalID(ctx, params.ExternalID)
+}
+
 func (r *EntContainerRepository) FindLongestIdleStopped(ctx context.Context, limit int) ([]*Container, error) {
 	if limit <= 0 {
 		limit = 1
@@ -112,8 +155,14 @@ func (r *EntContainerRepository) FindLongestIdleStopped(ctx context.Context, lim
 
 	rows, err := r.client.ContainerMetadata.
 		Query().
-		Where(containermetadata.StateEQ("stopped")).
-		Order(containermetadata.ByLastActivityAt(sql.OrderAsc())).
+		Where(
+			containermetadata.StateEQ("stopped"),
+			containermetadata.LastActivityAtNotNil(),
+		).
+		Order(
+			containermetadata.ByLastActivityAt(sql.OrderAsc()),
+			containermetadata.ByCreatedAt(sql.OrderAsc()),
+		).
 		Limit(limit).
 		All(ctx)
 	if err != nil {
