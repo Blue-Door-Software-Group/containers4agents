@@ -7,6 +7,67 @@ import (
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/provider/types"
 )
 
+func TestNormalizeImagePullPolicy(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{name: "default empty", input: "", want: "if-not-present"},
+		{name: "always", input: "always", want: "always"},
+		{name: "if-not-present mixed case", input: "If-Not-Present", want: "if-not-present"},
+		{name: "never", input: "never", want: "never"},
+		{name: "invalid", input: "sometimes", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := normalizeImagePullPolicy(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("expected nil error, got %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("expected %q, got %q", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestBuildRegistryAuthConfig(t *testing.T) {
+	cfg, err := buildRegistryAuthConfig("ghcr.io", "", "")
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if cfg != nil {
+		t.Fatalf("expected nil auth config when credentials omitted, got %+v", cfg)
+	}
+
+	cfg, err = buildRegistryAuthConfig("ghcr.io", "user", "token")
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected non-nil auth config")
+	}
+	if cfg.ServerAddress != "ghcr.io" || cfg.Username != "user" || cfg.Password != "token" {
+		t.Fatalf("unexpected auth config: %+v", cfg)
+	}
+
+	if _, err := buildRegistryAuthConfig("ghcr.io", "user", ""); err == nil {
+		t.Fatal("expected error for partial credentials")
+	}
+	if _, err := buildRegistryAuthConfig("ghcr.io", "", "token"); err == nil {
+		t.Fatal("expected error for partial credentials")
+	}
+}
+
 func TestMapExecExitStatus(t *testing.T) {
 	tests := []struct {
 		name     string

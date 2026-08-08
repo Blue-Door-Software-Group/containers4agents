@@ -91,7 +91,12 @@ func run() error {
 		logger.Info("generated API key for this process", "api_key", keyManager.APIKey())
 	}
 
-	dockerProvider, err := docker.New(cfg.DockerHost)
+	dockerProvider, err := docker.NewWithOptions(cfg.DockerHost, docker.Options{
+		ImagePullPolicy:  cfg.DockerImagePullPolicy,
+		RegistryServer:   cfg.DockerRegistryServer,
+		RegistryUsername: cfg.DockerRegistryUsername,
+		RegistryPassword: cfg.DockerRegistryPassword,
+	})
 	if err != nil {
 		return fmt.Errorf("initialize docker provider: %w", err)
 	}

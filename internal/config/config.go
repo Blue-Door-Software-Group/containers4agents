@@ -24,6 +24,10 @@ type Config struct {
 	ActiveImageVersion           string
 	DockerImage                  string
 	DockerHost                   string
+	DockerImagePullPolicy        string
+	DockerRegistryServer         string
+	DockerRegistryUsername       string
+	DockerRegistryPassword       string
 	ResourcePolicyFile           string
 	ActiveExecLimit              int
 	RunningContainerLimit        int
@@ -152,6 +156,10 @@ func Load() (Config, error) {
 		ActiveImageVersion:           strings.TrimSpace(getEnvOrDefault("C4A_ACTIVE_IMAGE_VERSION", "v1")),
 		DockerImage:                  strings.TrimSpace(getEnvOrDefault("C4A_DOCKER_IMAGE", "alpine:3.20")),
 		DockerHost:                   strings.TrimSpace(os.Getenv("C4A_DOCKER_HOST")),
+		DockerImagePullPolicy:        strings.ToLower(strings.TrimSpace(getEnvOrDefault("C4A_DOCKER_IMAGE_PULL_POLICY", "if-not-present"))),
+		DockerRegistryServer:         strings.TrimSpace(getEnvOrDefault("C4A_DOCKER_REGISTRY_SERVER", "ghcr.io")),
+		DockerRegistryUsername:       strings.TrimSpace(os.Getenv("C4A_DOCKER_REGISTRY_USERNAME")),
+		DockerRegistryPassword:       strings.TrimSpace(os.Getenv("C4A_DOCKER_REGISTRY_PASSWORD")),
 		ResourcePolicyFile:           strings.TrimSpace(os.Getenv("C4A_RESOURCE_POLICY_FILE")),
 		ActiveExecLimit:              defaultPolicy.Capacity.ActiveExecLimit,
 		RunningContainerLimit:        defaultPolicy.Capacity.RunningContainerLimit,
@@ -202,6 +210,20 @@ func Load() (Config, error) {
 	}
 	if cfg.DockerImage == "" {
 		return Config{}, fmt.Errorf("C4A_DOCKER_IMAGE must not be empty")
+	}
+	switch cfg.DockerImagePullPolicy {
+	case "always", "if-not-present", "never":
+	default:
+		return Config{}, fmt.Errorf("invalid C4A_DOCKER_IMAGE_PULL_POLICY %q (allowed: always, if-not-present, never)", cfg.DockerImagePullPolicy)
+	}
+	if cfg.DockerRegistryUsername != "" && cfg.DockerRegistryPassword == "" {
+		return Config{}, fmt.Errorf("C4A_DOCKER_REGISTRY_PASSWORD is required when C4A_DOCKER_REGISTRY_USERNAME is set")
+	}
+	if cfg.DockerRegistryPassword != "" && cfg.DockerRegistryUsername == "" {
+		return Config{}, fmt.Errorf("C4A_DOCKER_REGISTRY_USERNAME is required when C4A_DOCKER_REGISTRY_PASSWORD is set")
+	}
+	if cfg.DockerRegistryServer == "" {
+		return Config{}, fmt.Errorf("C4A_DOCKER_REGISTRY_SERVER must not be empty")
 	}
 	if !cfg.DevMode && cfg.APIKey == "" {
 		return Config{}, fmt.Errorf("CONTAINERS4AGENTS_API_KEY is required when DEV_MODE is false")

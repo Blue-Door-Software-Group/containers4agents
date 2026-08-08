@@ -36,6 +36,7 @@ func TestLoadSuccess(t *testing.T) {
 	t.Setenv("C4A_HTTP_LISTEN_ADDR", ":8181")
 	t.Setenv("C4A_LOG_LEVEL", "debug")
 	t.Setenv("AUTO_MIGRATE", "true")
+	t.Setenv("C4A_DOCKER_IMAGE_PULL_POLICY", "if-not-present")
 
 	cfg, err := Load()
 	if err != nil {
@@ -65,6 +66,12 @@ func TestLoadSuccess(t *testing.T) {
 	}
 	if cfg.WorkspaceDiskQuotaBytes != 10*1024*1024*1024 {
 		t.Fatalf("expected default workspace quota 10737418240, got %d", cfg.WorkspaceDiskQuotaBytes)
+	}
+	if cfg.DockerImagePullPolicy != "if-not-present" {
+		t.Fatalf("expected default pull policy if-not-present, got %q", cfg.DockerImagePullPolicy)
+	}
+	if cfg.DockerRegistryServer != "ghcr.io" {
+		t.Fatalf("expected default registry server ghcr.io, got %q", cfg.DockerRegistryServer)
 	}
 }
 
@@ -206,5 +213,37 @@ func TestLoadRejectsNonPositiveWorkspaceQuota(t *testing.T) {
 	_, err := Load()
 	if err == nil {
 		t.Fatal("expected error when C4A_WORKSPACE_DISK_QUOTA_BYTES is not positive")
+	}
+}
+
+func TestLoadRejectsInvalidImagePullPolicy(t *testing.T) {
+	t.Setenv("CONTAINERS4AGENTS_API_KEY", "test-key")
+	t.Setenv("C4A_DB_DSN", "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable")
+	t.Setenv("C4A_DB_DRIVER", "postgres")
+	t.Setenv("C4A_DOCKER_IMAGE_PULL_POLICY", "sometimes")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for invalid C4A_DOCKER_IMAGE_PULL_POLICY")
+	}
+}
+
+func TestLoadRejectsPartialRegistryCredentials(t *testing.T) {
+	t.Setenv("CONTAINERS4AGENTS_API_KEY", "test-key")
+	t.Setenv("C4A_DB_DSN", "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable")
+	t.Setenv("C4A_DB_DRIVER", "postgres")
+	t.Setenv("C4A_DOCKER_REGISTRY_USERNAME", "user-only")
+	t.Setenv("C4A_DOCKER_REGISTRY_PASSWORD", "")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error when only username is set")
+	}
+
+	t.Setenv("C4A_DOCKER_REGISTRY_USERNAME", "")
+	t.Setenv("C4A_DOCKER_REGISTRY_PASSWORD", "token-only")
+	_, err = Load()
+	if err == nil {
+		t.Fatal("expected error when only password is set")
 	}
 }

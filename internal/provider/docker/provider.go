@@ -3,6 +3,8 @@ package docker
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -20,20 +23,33 @@ import (
 )
 
 type Provider struct {
-	host string
-	cli  *client.Client
+	host            string
+	cli             *client.Client
+	imagePullPolicy string
+	registryAuth    *registry.AuthConfig
 }
 
 func New(host string) (*Provider, error) {
-	opts := []client.Opt{
+	return NewWithOptions(host, Options{})
+}
+
+type Options struct {
+	ImagePullPolicy  string
+	RegistryServer   string
+	RegistryUsername string
+	RegistryPassword string
+}
+
+func NewWithOptions(host string, opts Options) (*Provider, error) {
+	clientOpts := []client.Opt{
 		client.FromEnv,
 		client.WithAPIVersionNegotiation(),
 	}
 	if strings.TrimSpace(host) != "" {
-		opts = append(opts, client.WithHost(host))
+		clientOpts = append(clientOpts, client.WithHost(host))
 	}
 
-	cli, err := client.NewClientWithOpts(opts...)
+	cli, err := client.NewClientWithOpts(clientOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("%w: init docker client: %v", types.ErrProviderUnavailable, err)
 	}
@@ -45,9 +61,22 @@ func New(host string) (*Provider, error) {
 		return nil, fmt.Errorf("%w: ping docker daemon: %v", types.ErrProviderUnavailable, err)
 	}
 
+	pullPolicy, err := normalizeImagePullPolicy(opts.ImagePullPolicy)
+	if err != nil {
+		_ = cli.Close()
+		return nil, err
+	}
+	registryAuth, err := buildRegistryAuthConfig(opts.RegistryServer, opts.RegistryUsername, opts.RegistryPassword)
+	if err != nil {
+		_ = cli.Close()
+		return nil, err
+	}
+
 	return &Provider{
-		host: host,
-		cli:  cli,
+		host:            host,
+		cli:             cli,
+		imagePullPolicy: pullPolicy,
+		registryAuth:    registryAuth,
 	}, nil
 }
 
@@ -467,13 +496,66 @@ func (p *Provider) State(ctx context.Context, providerRef string) (string, error
 }
 
 func (p *Provider) ensureImage(ctx context.Context, imageRef string) error {
-	reader, err := p.cli.ImagePull(ctx, imageRef, image.PullOptions{})
+	if p.imagePullPolicy == "never" || p.imagePullPolicy == "if-not-present" {
+		_, _, inspectErr := p.cli.ImageInspectWithRaw(ctx, imageRef)
+		if inspectErr == nil {
+			return nil
+		}
+		if p.imagePullPolicy == "never" {
+			return fmt.Errorf("%w: image %s not present locally and pull policy is never", types.ErrProviderNotFound, imageRef)
+		}
+		if !errdefs.IsNotFound(inspectErr) {
+			return mapDockerErr(inspectErr)
+		}
+	}
+
+	pullOpts := image.PullOptions{}
+	if p.registryAuth != nil {
+		rawAuth, err := json.Marshal(p.registryAuth)
+		if err != nil {
+			return fmt.Errorf("%w: encode registry auth: %v", types.ErrProviderInternal, err)
+		}
+		pullOpts.RegistryAuth = base64.StdEncoding.EncodeToString(rawAuth)
+	}
+
+	reader, err := p.cli.ImagePull(ctx, imageRef, pullOpts)
 	if err != nil {
 		return mapDockerErr(err)
 	}
 	defer reader.Close()
 	_, _ = io.Copy(io.Discard, reader)
 	return nil
+}
+
+func normalizeImagePullPolicy(policy string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(policy))
+	if normalized == "" {
+		return "if-not-present", nil
+	}
+	switch normalized {
+	case "always", "if-not-present", "never":
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("%w: invalid image pull policy %q", types.ErrProviderInternal, policy)
+	}
+}
+
+func buildRegistryAuthConfig(server, username, password string) (*registry.AuthConfig, error) {
+	if strings.TrimSpace(username) == "" && strings.TrimSpace(password) == "" {
+		return nil, nil
+	}
+	if strings.TrimSpace(username) == "" || strings.TrimSpace(password) == "" {
+		return nil, fmt.Errorf("%w: registry username/password must both be set", types.ErrProviderInternal)
+	}
+	registryServer := strings.TrimSpace(server)
+	if registryServer == "" {
+		registryServer = "ghcr.io"
+	}
+	return &registry.AuthConfig{
+		Username:      strings.TrimSpace(username),
+		Password:      strings.TrimSpace(password),
+		ServerAddress: registryServer,
+	}, nil
 }
 
 func mapDockerErr(err error) error {
