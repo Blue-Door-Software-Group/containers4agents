@@ -3,6 +3,8 @@ package config
 import (
 	"testing"
 	"time"
+
+	"github.com/Blue-Door-Software-Group/containers4agents/internal/policy"
 )
 
 func TestLoadRequiresDSN(t *testing.T) {
@@ -49,20 +51,53 @@ func TestLoadSuccess(t *testing.T) {
 	if cfg.ExecTimeout != 120*time.Second {
 		t.Fatalf("expected default exec timeout 120s, got %s", cfg.ExecTimeout)
 	}
-	if cfg.ExecMaxStdoutBytes != 1024*1024 {
-		t.Fatalf("expected default stdout cap 1048576, got %d", cfg.ExecMaxStdoutBytes)
+	if cfg.ExecMaxStdoutBytes != 4*1024*1024 {
+		t.Fatalf("expected default stdout cap 4194304, got %d", cfg.ExecMaxStdoutBytes)
 	}
-	if cfg.ExecMaxStderrBytes != 1024*1024 {
-		t.Fatalf("expected default stderr cap 1048576, got %d", cfg.ExecMaxStderrBytes)
+	if cfg.ExecMaxStderrBytes != 4*1024*1024 {
+		t.Fatalf("expected default stderr cap 4194304, got %d", cfg.ExecMaxStderrBytes)
 	}
-	if cfg.FileMaxUploadBytes != 32*1024*1024 {
-		t.Fatalf("expected default upload cap 33554432, got %d", cfg.FileMaxUploadBytes)
+	if cfg.FileMaxUploadBytes != 64*1024*1024 {
+		t.Fatalf("expected default upload cap 67108864, got %d", cfg.FileMaxUploadBytes)
 	}
-	if cfg.FileMaxDownloadBytes != 32*1024*1024 {
-		t.Fatalf("expected default download cap 33554432, got %d", cfg.FileMaxDownloadBytes)
+	if cfg.FileMaxDownloadBytes != 64*1024*1024 {
+		t.Fatalf("expected default download cap 67108864, got %d", cfg.FileMaxDownloadBytes)
 	}
-	if cfg.WorkspaceDiskQuotaBytes != 1024*1024*1024 {
-		t.Fatalf("expected default workspace quota 1073741824, got %d", cfg.WorkspaceDiskQuotaBytes)
+	if cfg.WorkspaceDiskQuotaBytes != 10*1024*1024*1024 {
+		t.Fatalf("expected default workspace quota 10737418240, got %d", cfg.WorkspaceDiskQuotaBytes)
+	}
+}
+
+func TestLoadUsesPolicyDefaultsForCapacityAndRuntime(t *testing.T) {
+	t.Setenv("CONTAINERS4AGENTS_API_KEY", "test-key")
+	t.Setenv("C4A_DB_DSN", "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable")
+	t.Setenv("C4A_DB_DRIVER", "postgres")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("expected load to succeed, got error: %v", err)
+	}
+
+	defaultPolicy := policy.Defaults()
+	defaultProfile := defaultPolicy.Profiles[defaultPolicy.ActiveProfile]
+
+	if cfg.ActiveExecLimit != defaultPolicy.Capacity.ActiveExecLimit {
+		t.Fatalf("expected active exec limit %d, got %d", defaultPolicy.Capacity.ActiveExecLimit, cfg.ActiveExecLimit)
+	}
+	if cfg.RunningContainerLimit != defaultPolicy.Capacity.RunningContainerLimit {
+		t.Fatalf("expected running container limit %d, got %d", defaultPolicy.Capacity.RunningContainerLimit, cfg.RunningContainerLimit)
+	}
+	if cfg.TotalContainerLimit != defaultPolicy.Capacity.TotalContainerLimit {
+		t.Fatalf("expected total container limit %d, got %d", defaultPolicy.Capacity.TotalContainerLimit, cfg.TotalContainerLimit)
+	}
+	if cfg.ContainerCPUMaxCores != defaultProfile.CPU.MaxCores {
+		t.Fatalf("expected cpu max cores %f, got %f", defaultProfile.CPU.MaxCores, cfg.ContainerCPUMaxCores)
+	}
+	if cfg.ContainerMemoryMaxBytes != defaultProfile.Memory.MaxBytes {
+		t.Fatalf("expected memory max bytes %d, got %d", defaultProfile.Memory.MaxBytes, cfg.ContainerMemoryMaxBytes)
+	}
+	if cfg.ContainerFileCountMax != defaultProfile.Disk.FileCountMax {
+		t.Fatalf("expected file count max %d, got %d", defaultProfile.Disk.FileCountMax, cfg.ContainerFileCountMax)
 	}
 }
 

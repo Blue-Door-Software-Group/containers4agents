@@ -17,6 +17,9 @@ import (
 type fakeRepo struct {
 	getFn           func(context.Context, string) (*repository.Container, error)
 	updateIfCurrent func(context.Context, repository.UpdateStateParams, string) (*repository.Container, error)
+	countByStateFn  func(context.Context, string) (int, error)
+	countTotalFn    func(context.Context) (int, error)
+	countExecFn     func(context.Context) (int, error)
 }
 
 func (f fakeRepo) Create(context.Context, repository.CreateParams) (*repository.Container, error) {
@@ -40,6 +43,24 @@ func (f fakeRepo) UpdateStateIfCurrent(
 }
 func (f fakeRepo) BeginExecution(context.Context, string, string) error { return nil }
 func (f fakeRepo) EndExecution(context.Context, string) error           { return nil }
+func (f fakeRepo) CountByState(ctx context.Context, state string) (int, error) {
+	if f.countByStateFn == nil {
+		return 0, nil
+	}
+	return f.countByStateFn(ctx, state)
+}
+func (f fakeRepo) CountTotal(ctx context.Context) (int, error) {
+	if f.countTotalFn == nil {
+		return 0, nil
+	}
+	return f.countTotalFn(ctx)
+}
+func (f fakeRepo) CountExecutionInProgress(ctx context.Context) (int, error) {
+	if f.countExecFn == nil {
+		return 0, nil
+	}
+	return f.countExecFn(ctx)
+}
 
 type fakeProvider struct {
 	uploadFn        func(context.Context, string, string, io.Reader) error
@@ -181,5 +202,78 @@ func TestManifestReturnsSortedEntriesAndUsage(t *testing.T) {
 	}
 	if result.WorkspaceDiskQuota != 2048 {
 		t.Fatalf("expected workspace quota 2048, got %d", result.WorkspaceDiskQuota)
+	}
+}
+
+func TestUploadRejectsWhenFileCountLimitReached(t *testing.T) {
+	providerRef := "provider-1"
+	svc := NewService(
+		fakeRepo{
+			getFn: func(_ context.Context, _ string) (*repository.Container, error) {
+				return &repository.Container{
+					ExternalID:  "c1",
+					State:       lifecycle.StateRunning,
+					ProviderRef: &providerRef,
+				}, nil
+			},
+		},
+		fakeProvider{
+			uploadFn: func(context.Context, string, string, io.Reader) error {
+				t.Fatal("upload should not be called when file-count limit reached")
+				return nil
+			},
+			downloadFn:      func(context.Context, string, string, io.Writer) error { return nil },
+			deleteFn:        func(context.Context, string, string) error { return nil },
+			listWorkspaceFn: func(context.Context, string) ([]types.FileEntry, error) { return nil, nil },
+			readUsageFn: func(context.Context, string) (types.UsageSnapshot, error) {
+				return types.UsageSnapshot{WorkspaceBytes: 1, FileCount: 100}, nil
+			},
+		},
+		config.Config{
+			FileMaxUploadBytes:      10,
+			FileMaxDownloadBytes:    10,
+			WorkspaceDiskQuotaBytes: 1024,
+			ContainerFileCountMax:   100,
+		},
+	)
+
+	err := svc.Upload(context.Background(), "c1", "a.txt", bytes.NewReader([]byte("x")))
+	if err == nil || !errors.Is(err, ErrPayloadTooLarge) {
+		t.Fatalf("expected ErrPayloadTooLarge, got %v", err)
+	}
+}
+
+func TestUploadRejectsWhenWorkspaceQuotaExceeded(t *testing.T) {
+	providerRef := "provider-1"
+	svc := NewService(
+		fakeRepo{
+			getFn: func(_ context.Context, _ string) (*repository.Container, error) {
+				return &repository.Container{
+					ExternalID:  "c1",
+					State:       lifecycle.StateRunning,
+					ProviderRef: &providerRef,
+				}, nil
+			},
+		},
+		fakeProvider{
+			uploadFn:        func(context.Context, string, string, io.Reader) error { return nil },
+			downloadFn:      func(context.Context, string, string, io.Writer) error { return nil },
+			deleteFn:        func(context.Context, string, string) error { return nil },
+			listWorkspaceFn: func(context.Context, string) ([]types.FileEntry, error) { return nil, nil },
+			readUsageFn: func(context.Context, string) (types.UsageSnapshot, error) {
+				return types.UsageSnapshot{WorkspaceBytes: 1024, FileCount: 10}, nil
+			},
+		},
+		config.Config{
+			FileMaxUploadBytes:      10,
+			FileMaxDownloadBytes:    10,
+			WorkspaceDiskQuotaBytes: 1024,
+			ContainerFileCountMax:   100,
+		},
+	)
+
+	err := svc.Upload(context.Background(), "c1", "a.txt", bytes.NewReader([]byte("x")))
+	if err == nil || !errors.Is(err, ErrDiskQuotaExceeded) {
+		t.Fatalf("expected ErrDiskQuotaExceeded, got %v", err)
 	}
 }

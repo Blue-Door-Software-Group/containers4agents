@@ -89,13 +89,23 @@ Do not auto-resume on exec in v1. Return a structured state conflict and require
 
 ### Decision
 
-Ship conservative defaults and tune with telemetry:
+Ship policy-file-backed defaults tuned for initial lab deployment profile:
 
-- CPU: 1 vCPU equivalent hard cap
-- Memory: 1-2 GiB
-- Workspace disk: 1 GiB
-- Exec timeout: 120 seconds default, 300 seconds hard max
-- Output cap: 1-4 MiB per stream
+- Capacity:
+  - active exec limit: 10
+  - running container limit: 30
+  - total container limit: 100
+- Per-container:
+  - CPU: 2.0 cores hard cap
+  - Memory: 3 GiB
+  - Workspace disk quota: 10 GiB
+  - Tmp disk quota: 2 GiB
+  - PID limit: 256
+  - Exec timeout: 120 seconds default, 300 seconds max
+  - Stdout/stderr caps: 4 MiB per stream
+  - Upload/download caps: 64 MiB
+  - File count cap: 100000
+  - Max concurrent exec per container: 1
 
 ### Why
 
@@ -104,6 +114,8 @@ Ship conservative defaults and tune with telemetry:
 
 ### Notes
 
+- Policy is loaded from `C4A_RESOURCE_POLICY_FILE`; unset/unreadable falls back to compiled defaults.
+- Readable-but-invalid policy files fail startup.
 - Final limits should be validated with representative agent workloads before GA.
 
 ## ADR-007 Docker provider access model in Portainer

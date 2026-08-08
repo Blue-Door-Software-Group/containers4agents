@@ -20,6 +20,7 @@ var (
 	ErrProviderFailure   = errors.New("file operation provider failure")
 	ErrPathViolation     = errors.New("file path policy violation")
 	ErrPayloadTooLarge   = errors.New("file payload too large")
+	ErrDiskQuotaExceeded = errors.New("workspace disk quota exceeded")
 	ErrFileNotFound      = errors.New("file not found")
 )
 
@@ -51,10 +52,33 @@ func (s *Service) Upload(ctx context.Context, externalID string, requestedPath s
 		return err
 	}
 
-	limitedReader := newMaxBytesReader(content, int64(s.cfg.FileMaxUploadBytes))
+	usage, err := s.provider.ReadUsage(ctx, providerRef)
+	if err != nil {
+		return s.mapProviderErr(err)
+	}
+	if s.cfg.ContainerFileCountMax > 0 && usage.FileCount >= s.cfg.ContainerFileCountMax {
+		return fmt.Errorf("%w: file count limit reached", ErrPayloadTooLarge)
+	}
+
+	remainingQuota := int64(s.cfg.FileMaxUploadBytes)
+	if s.cfg.WorkspaceDiskQuotaBytes > 0 {
+		remainingQuota = s.cfg.WorkspaceDiskQuotaBytes - usage.WorkspaceBytes
+		if remainingQuota <= 0 {
+			return ErrDiskQuotaExceeded
+		}
+	}
+	uploadLimit := int64(s.cfg.FileMaxUploadBytes)
+	if remainingQuota < uploadLimit {
+		uploadLimit = remainingQuota
+	}
+
+	limitedReader := newMaxBytesReader(content, uploadLimit)
 
 	if err := s.provider.UploadFile(ctx, providerRef, path, limitedReader); err != nil {
 		if errors.Is(err, errExceededMaxBytes) {
+			if uploadLimit == remainingQuota {
+				return ErrDiskQuotaExceeded
+			}
 			return fmt.Errorf("%w: file payload exceeds configured limit", ErrPayloadTooLarge)
 		}
 		return s.mapProviderErr(err)
@@ -174,6 +198,8 @@ func (s *Service) mapProviderErr(err error) error {
 		return ErrFileNotFound
 	case errors.Is(err, types.ErrProviderDenied):
 		return ErrPathViolation
+	case errors.Is(err, types.ErrProviderQuotaExceeded):
+		return ErrDiskQuotaExceeded
 	case errors.Is(err, types.ErrProviderConflict):
 		return ErrStateConflict
 	default:

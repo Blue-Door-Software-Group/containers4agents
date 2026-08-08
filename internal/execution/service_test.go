@@ -21,6 +21,9 @@ type fakeRepo struct {
 	updateStateFn   func(context.Context, repository.UpdateStateParams) (*repository.Container, error)
 	beginExecFn     func(context.Context, string, string) error
 	endExecFn       func(context.Context, string) error
+	countByStateFn  func(context.Context, string) (int, error)
+	countTotalFn    func(context.Context) (int, error)
+	countExecFn     func(context.Context) (int, error)
 }
 
 func (f fakeRepo) Create(ctx context.Context, params repository.CreateParams) (*repository.Container, error) {
@@ -59,6 +62,24 @@ func (f fakeRepo) EndExecution(ctx context.Context, externalID string) error {
 		return nil
 	}
 	return f.endExecFn(ctx, externalID)
+}
+func (f fakeRepo) CountByState(ctx context.Context, state string) (int, error) {
+	if f.countByStateFn == nil {
+		return 0, nil
+	}
+	return f.countByStateFn(ctx, state)
+}
+func (f fakeRepo) CountTotal(ctx context.Context) (int, error) {
+	if f.countTotalFn == nil {
+		return 0, nil
+	}
+	return f.countTotalFn(ctx)
+}
+func (f fakeRepo) CountExecutionInProgress(ctx context.Context) (int, error) {
+	if f.countExecFn == nil {
+		return 0, nil
+	}
+	return f.countExecFn(ctx)
 }
 
 type fakeProvider struct {
@@ -299,5 +320,56 @@ func TestExecuteReturnsResultWhenActivityUpdateFails(t *testing.T) {
 	}
 	if result.Stdout != "done" {
 		t.Fatalf("expected stdout %q, got %q", "done", result.Stdout)
+	}
+}
+
+func TestExecuteRejectsWhenActiveExecutionLimitReached(t *testing.T) {
+	providerRef := "provider-1"
+	svc := NewService(
+		fakeRepo{
+			getFn: func(_ context.Context, _ string) (*repository.Container, error) {
+				return &repository.Container{
+					ExternalID:  "c1",
+					State:       lifecycle.StateRunning,
+					ProviderRef: &providerRef,
+				}, nil
+			},
+			updateIfCurrent: func(_ context.Context, _ repository.UpdateStateParams, _ string) (*repository.Container, error) {
+				return &repository.Container{}, nil
+			},
+			countExecFn: func(_ context.Context) (int, error) {
+				return 10, nil
+			},
+		},
+		fakeProvider{
+			execFn: func(_ context.Context, _ string, _ types.ExecRequest) (types.ExecResult, error) {
+				t.Fatal("provider should not be called when active limit exceeded")
+				return types.ExecResult{}, nil
+			},
+		},
+		config.Config{
+			ActiveExecLimit:    10,
+			ExecTimeout:        2 * time.Second,
+			ExecMaxStdoutBytes: 128,
+			ExecMaxStderrBytes: 128,
+		},
+	)
+
+	_, err := svc.Execute(context.Background(), "c1", []string{"echo", "hello"})
+	if err == nil || !errors.Is(err, ErrStateConflict) {
+		t.Fatalf("expected ErrStateConflict, got %v", err)
+	}
+}
+
+func TestNormalizeStatusRecognizesPhase5Statuses(t *testing.T) {
+	tests := []string{StatusOOM, StatusDiskQuota, StatusSandboxViolation}
+	for _, status := range tests {
+		status := status
+		t.Run(status, func(t *testing.T) {
+			got := normalizeStatus(status, nil)
+			if got != status {
+				t.Fatalf("expected %q, got %q", status, got)
+			}
+		})
 	}
 }

@@ -14,11 +14,14 @@ import (
 )
 
 const (
-	StatusOK            = "ok"
-	StatusUserError     = "user_error"
-	StatusTimeout       = "timeout"
-	StatusKilled        = "killed"
-	StatusInternalError = "internal_error"
+	StatusOK               = "ok"
+	StatusUserError        = "user_error"
+	StatusTimeout          = "timeout"
+	StatusOOM              = "oom"
+	StatusDiskQuota        = "disk_quota"
+	StatusSandboxViolation = "sandbox_violation"
+	StatusKilled           = "killed"
+	StatusInternalError    = "internal_error"
 )
 
 var (
@@ -75,6 +78,14 @@ func (s *Service) Execute(ctx context.Context, externalID string, command []stri
 	if row.ProviderRef == nil || *row.ProviderRef == "" {
 		return nil, fmt.Errorf("%w: missing provider reference", ErrStateConflict)
 	}
+
+	activeExecCount, err := s.repo.CountExecutionInProgress(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("count active executions: %w", err)
+	}
+	if s.cfg.ActiveExecLimit > 0 && activeExecCount >= s.cfg.ActiveExecLimit {
+		return nil, fmt.Errorf("%w: active execution limit reached", ErrStateConflict)
+	}
 	if err := s.repo.BeginExecution(ctx, row.ExternalID, lifecycle.StateRunning); err != nil {
 		switch {
 		case errors.Is(err, repository.ErrExecutionInProgress):
@@ -102,6 +113,7 @@ func (s *Service) Execute(ctx context.Context, externalID string, command []stri
 		Timeout:        s.cfg.ExecTimeout,
 		MaxStdoutBytes: s.cfg.ExecMaxStdoutBytes,
 		MaxStderrBytes: s.cfg.ExecMaxStderrBytes,
+		User:           s.cfg.ContainerExecUser,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("%w: execute command: %w", ErrProviderFailure, err)
@@ -133,7 +145,7 @@ func (s *Service) Execute(ctx context.Context, externalID string, command []stri
 
 func normalizeStatus(status string, exitCode *int) string {
 	switch status {
-	case StatusOK, StatusUserError, StatusTimeout, StatusKilled, StatusInternalError:
+	case StatusOK, StatusUserError, StatusTimeout, StatusOOM, StatusDiskQuota, StatusSandboxViolation, StatusKilled, StatusInternalError:
 		return status
 	}
 

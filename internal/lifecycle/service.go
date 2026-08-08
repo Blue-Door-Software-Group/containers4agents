@@ -44,6 +44,21 @@ func NewService(repo repository.ContainerRepository, provider types.ContainerPro
 }
 
 func (s *Service) CreateContainer(ctx context.Context) (*ContainerView, error) {
+	runningCount, err := s.repo.CountByState(ctx, StateRunning)
+	if err != nil {
+		return nil, fmt.Errorf("count running containers: %w", err)
+	}
+	if s.cfg.RunningContainerLimit > 0 && runningCount >= s.cfg.RunningContainerLimit {
+		return nil, fmt.Errorf("%w: running container limit reached", ErrStateConflict)
+	}
+	totalCount, err := s.repo.CountTotal(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("count total containers: %w", err)
+	}
+	if s.cfg.TotalContainerLimit > 0 && totalCount >= s.cfg.TotalContainerLimit {
+		return nil, fmt.Errorf("%w: total container limit reached", ErrStateConflict)
+	}
+
 	externalID := uuid.NewString()
 	row, err := s.repo.Create(ctx, repository.CreateParams{
 		ExternalID:   externalID,
@@ -59,6 +74,17 @@ func (s *Service) CreateContainer(ctx context.Context) (*ContainerView, error) {
 		Profile:      s.cfg.DefaultProfile,
 		ImageVersion: s.cfg.ActiveImageVersion,
 		Image:        s.cfg.DockerImage,
+		Runtime: types.RuntimeOptions{
+			CPUMaxCores:         s.cfg.ContainerCPUMaxCores,
+			MemoryMaxBytes:      s.cfg.ContainerMemoryMaxBytes,
+			TmpDiskMaxBytes:     s.cfg.ContainerTmpDiskMaxBytes,
+			PIDsMax:             s.cfg.ContainerPIDsMax,
+			ExecUser:            s.cfg.ContainerExecUser,
+			DropAllCapabilities: s.cfg.ContainerDropAllCapabilities,
+			NoNewPrivileges:     s.cfg.ContainerNoNewPrivileges,
+			ReadOnlyRootFS:      s.cfg.ContainerReadOnlyRootFS,
+			SeccompProfilePath:  s.cfg.ContainerSeccompProfilePath,
+		},
 	})
 	if err != nil {
 		if failedState, stateErr := NextState(row.State, TransitionCreateFailed); stateErr == nil {

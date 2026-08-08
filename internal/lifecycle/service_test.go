@@ -19,6 +19,9 @@ type fakeRepo struct {
 	updateIfCurrent func(context.Context, repository.UpdateStateParams, string) (*repository.Container, error)
 	beginExecFn     func(context.Context, string, string) error
 	endExecFn       func(context.Context, string) error
+	countByStateFn  func(context.Context, string) (int, error)
+	countTotalFn    func(context.Context) (int, error)
+	countExecFn     func(context.Context) (int, error)
 }
 
 func (f fakeRepo) Create(ctx context.Context, params repository.CreateParams) (*repository.Container, error) {
@@ -44,6 +47,24 @@ func (f fakeRepo) EndExecution(ctx context.Context, externalID string) error {
 		return nil
 	}
 	return f.endExecFn(ctx, externalID)
+}
+func (f fakeRepo) CountByState(ctx context.Context, state string) (int, error) {
+	if f.countByStateFn == nil {
+		return 0, nil
+	}
+	return f.countByStateFn(ctx, state)
+}
+func (f fakeRepo) CountTotal(ctx context.Context) (int, error) {
+	if f.countTotalFn == nil {
+		return 0, nil
+	}
+	return f.countTotalFn(ctx)
+}
+func (f fakeRepo) CountExecutionInProgress(ctx context.Context) (int, error) {
+	if f.countExecFn == nil {
+		return 0, nil
+	}
+	return f.countExecFn(ctx)
 }
 
 type fakeProvider struct {
@@ -143,5 +164,56 @@ func TestStartContainerTransitionRaceMapsConflict(t *testing.T) {
 	}
 	if !errors.Is(err, ErrStateConflict) {
 		t.Fatalf("expected ErrStateConflict, got %v", err)
+	}
+}
+
+func TestCreateContainerRejectsRunningLimit(t *testing.T) {
+	repo := fakeRepo{
+		countByStateFn: func(_ context.Context, state string) (int, error) {
+			if state != StateRunning {
+				t.Fatalf("unexpected state: %s", state)
+			}
+			return 30, nil
+		},
+		countTotalFn: func(_ context.Context) (int, error) {
+			return 50, nil
+		},
+		createFn: func(_ context.Context, _ repository.CreateParams) (*repository.Container, error) {
+			t.Fatal("create should not be called when running limit reached")
+			return nil, nil
+		},
+	}
+
+	svc := NewService(repo, fakeProvider{}, config.Config{
+		RunningContainerLimit: 30,
+		TotalContainerLimit:   100,
+	})
+	_, err := svc.CreateContainer(context.Background())
+	if err == nil || !errors.Is(err, ErrStateConflict) {
+		t.Fatalf("expected state conflict, got %v", err)
+	}
+}
+
+func TestCreateContainerRejectsTotalLimit(t *testing.T) {
+	repo := fakeRepo{
+		countByStateFn: func(_ context.Context, _ string) (int, error) {
+			return 10, nil
+		},
+		countTotalFn: func(_ context.Context) (int, error) {
+			return 100, nil
+		},
+		createFn: func(_ context.Context, _ repository.CreateParams) (*repository.Container, error) {
+			t.Fatal("create should not be called when total limit reached")
+			return nil, nil
+		},
+	}
+
+	svc := NewService(repo, fakeProvider{}, config.Config{
+		RunningContainerLimit: 30,
+		TotalContainerLimit:   100,
+	})
+	_, err := svc.CreateContainer(context.Background())
+	if err == nil || !errors.Is(err, ErrStateConflict) {
+		t.Fatalf("expected state conflict, got %v", err)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/api/handlers"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/api/middleware"
@@ -20,6 +21,7 @@ import (
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/metadata/repository"
 	obslog "github.com/Blue-Door-Software-Group/containers4agents/internal/observability/logging"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/observability/metrics"
+	"github.com/Blue-Door-Software-Group/containers4agents/internal/policy"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/provider/docker"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/server"
 )
@@ -38,7 +40,24 @@ func run() error {
 	}
 
 	logger := obslog.New(cfg.LogLevel)
+
+	resourcePolicy, policySource, err := policy.Load(cfg.ResourcePolicyFile)
+	if err != nil {
+		return fmt.Errorf("load resource policy: %w", err)
+	}
+	if err := applyResourcePolicy(&cfg, resourcePolicy); err != nil {
+		return fmt.Errorf("apply resource policy: %w", err)
+	}
+
 	logger.Info("starting containers4agents", "addr", cfg.HTTPListenAddr, "db_driver", cfg.DBDriver, "auto_migrate", cfg.AutoMigrate)
+	logger.Info(
+		"resource policy loaded",
+		"source", policySource,
+		"profile", cfg.DefaultProfile,
+		"active_exec_limit", cfg.ActiveExecLimit,
+		"running_container_limit", cfg.RunningContainerLimit,
+		"total_container_limit", cfg.TotalContainerLimit,
+	)
 
 	repoClient, err := entrepo.New(cfg)
 	if err != nil {
@@ -127,4 +146,42 @@ func run() error {
 			return shutdownWithTimeout(sig)
 		}
 	}
+}
+
+func applyResourcePolicy(cfg *config.Config, resourcePolicy policy.ResourcePolicy) error {
+	if cfg == nil {
+		return fmt.Errorf("config must not be nil")
+	}
+	activeProfileName := cfg.DefaultProfile
+	if activeProfileName == "" {
+		activeProfileName = resourcePolicy.ActiveProfile
+	}
+	profile, ok := resourcePolicy.Profiles[activeProfileName]
+	if !ok {
+		return fmt.Errorf("profile %q not found in resource policy", activeProfileName)
+	}
+
+	cfg.DefaultProfile = activeProfileName
+	cfg.ActiveExecLimit = resourcePolicy.Capacity.ActiveExecLimit
+	cfg.RunningContainerLimit = resourcePolicy.Capacity.RunningContainerLimit
+	cfg.TotalContainerLimit = resourcePolicy.Capacity.TotalContainerLimit
+	cfg.ContainerCPUMaxCores = profile.CPU.MaxCores
+	cfg.ContainerMemoryMaxBytes = profile.Memory.MaxBytes
+	cfg.WorkspaceDiskQuotaBytes = profile.Disk.WorkspaceMaxBytes
+	cfg.ContainerTmpDiskMaxBytes = profile.Disk.TmpMaxBytes
+	cfg.ContainerFileCountMax = profile.Disk.FileCountMax
+	cfg.ContainerPIDsMax = profile.Process.PIDsMax
+	cfg.ContainerExecUser = profile.Exec.User
+	cfg.ContainerDropAllCapabilities = profile.Security.DropAllCapabilities
+	cfg.ContainerNoNewPrivileges = profile.Security.NoNewPrivileges
+	cfg.ContainerReadOnlyRootFS = profile.Security.ReadOnlyRootFS
+	if profile.Security.SeccompProfilePath != "" {
+		cfg.ContainerSeccompProfilePath = profile.Security.SeccompProfilePath
+	}
+	cfg.ExecTimeout = time.Duration(profile.Exec.TimeoutDefaultSeconds) * time.Second
+	cfg.ExecMaxStdoutBytes = profile.Exec.StdoutMaxBytes
+	cfg.ExecMaxStderrBytes = profile.Exec.StderrMaxBytes
+	cfg.FileMaxUploadBytes = profile.Files.MaxUploadBytes
+	cfg.FileMaxDownloadBytes = profile.Files.MaxDownloadBytes
+	return nil
 }

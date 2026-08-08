@@ -6,34 +6,57 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Blue-Door-Software-Group/containers4agents/internal/policy"
 )
 
 type Config struct {
-	HTTPListenAddr          string
-	LogLevel                string
-	DevMode                 bool
-	APIKey                  string
-	DBDriver                string
-	DBDSN                   string
-	AutoMigrate             bool
-	StartupTimeout          time.Duration
-	ShutdownTimeout         time.Duration
-	DefaultProfile          string
-	ActiveImageVersion      string
-	DockerImage             string
-	DockerHost              string
-	ExecTimeout             time.Duration
-	ExecMaxStdoutBytes      int
-	ExecMaxStderrBytes      int
-	FileMaxUploadBytes      int
-	FileMaxDownloadBytes    int
-	WorkspaceDiskQuotaBytes int64
-	ReadTimeout             time.Duration
-	WriteTimeout            time.Duration
-	IdleTimeout             time.Duration
+	HTTPListenAddr               string
+	LogLevel                     string
+	DevMode                      bool
+	APIKey                       string
+	DBDriver                     string
+	DBDSN                        string
+	AutoMigrate                  bool
+	StartupTimeout               time.Duration
+	ShutdownTimeout              time.Duration
+	DefaultProfile               string
+	ActiveImageVersion           string
+	DockerImage                  string
+	DockerHost                   string
+	ResourcePolicyFile           string
+	ActiveExecLimit              int
+	RunningContainerLimit        int
+	TotalContainerLimit          int
+	ContainerCPUMaxCores         float64
+	ContainerMemoryMaxBytes      int64
+	ContainerTmpDiskMaxBytes     int64
+	ContainerPIDsMax             int
+	ContainerExecUser            string
+	ContainerDropAllCapabilities bool
+	ContainerNoNewPrivileges     bool
+	ContainerReadOnlyRootFS      bool
+	ContainerSeccompProfilePath  string
+	ContainerFileCountMax        int64
+	ExecTimeout                  time.Duration
+	ExecMaxStdoutBytes           int
+	ExecMaxStderrBytes           int
+	FileMaxUploadBytes           int
+	FileMaxDownloadBytes         int
+	WorkspaceDiskQuotaBytes      int64
+	ReadTimeout                  time.Duration
+	WriteTimeout                 time.Duration
+	IdleTimeout                  time.Duration
 }
 
 func Load() (Config, error) {
+	defaultPolicy := policy.Defaults()
+	defaultProfileName := defaultPolicy.ActiveProfile
+	defaultProfile, ok := defaultPolicy.Profiles[defaultProfileName]
+	if !ok {
+		return Config{}, fmt.Errorf("default policy missing active profile %q", defaultProfileName)
+	}
+
 	devMode, err := getEnvBool("DEV_MODE", false)
 	if err != nil {
 		return Config{}, err
@@ -50,54 +73,68 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	execTimeout, err := getEnvDuration("C4A_EXEC_TIMEOUT", 120*time.Second)
+	execTimeout, err := getEnvDuration("C4A_EXEC_TIMEOUT", time.Duration(defaultProfile.Exec.TimeoutDefaultSeconds)*time.Second)
 	if err != nil {
 		return Config{}, err
 	}
-	execMaxStdoutBytes, err := getEnvInt("C4A_EXEC_MAX_STDOUT_BYTES", 1024*1024)
+	execMaxStdoutBytes, err := getEnvInt("C4A_EXEC_MAX_STDOUT_BYTES", defaultProfile.Exec.StdoutMaxBytes)
 	if err != nil {
 		return Config{}, err
 	}
-	execMaxStderrBytes, err := getEnvInt("C4A_EXEC_MAX_STDERR_BYTES", 1024*1024)
+	execMaxStderrBytes, err := getEnvInt("C4A_EXEC_MAX_STDERR_BYTES", defaultProfile.Exec.StderrMaxBytes)
 	if err != nil {
 		return Config{}, err
 	}
-	fileMaxUploadBytes, err := getEnvInt("C4A_FILE_MAX_UPLOAD_BYTES", 32*1024*1024)
+	fileMaxUploadBytes, err := getEnvInt("C4A_FILE_MAX_UPLOAD_BYTES", defaultProfile.Files.MaxUploadBytes)
 	if err != nil {
 		return Config{}, err
 	}
-	fileMaxDownloadBytes, err := getEnvInt("C4A_FILE_MAX_DOWNLOAD_BYTES", 32*1024*1024)
+	fileMaxDownloadBytes, err := getEnvInt("C4A_FILE_MAX_DOWNLOAD_BYTES", defaultProfile.Files.MaxDownloadBytes)
 	if err != nil {
 		return Config{}, err
 	}
-	workspaceDiskQuotaBytes, err := getEnvInt64("C4A_WORKSPACE_DISK_QUOTA_BYTES", 1024*1024*1024)
+	workspaceDiskQuotaBytes, err := getEnvInt64("C4A_WORKSPACE_DISK_QUOTA_BYTES", defaultProfile.Disk.WorkspaceMaxBytes)
 	if err != nil {
 		return Config{}, err
 	}
 
 	cfg := Config{
-		HTTPListenAddr:          getEnvOrDefault("C4A_HTTP_LISTEN_ADDR", ":8080"),
-		LogLevel:                strings.ToLower(getEnvOrDefault("C4A_LOG_LEVEL", "info")),
-		DevMode:                 devMode,
-		APIKey:                  strings.TrimSpace(os.Getenv("CONTAINERS4AGENTS_API_KEY")),
-		DBDriver:                strings.ToLower(getEnvOrDefault("C4A_DB_DRIVER", "postgres")),
-		DBDSN:                   strings.TrimSpace(os.Getenv("C4A_DB_DSN")),
-		AutoMigrate:             autoMigrate,
-		StartupTimeout:          startupTimeout,
-		ShutdownTimeout:         shutdownTimeout,
-		DefaultProfile:          strings.TrimSpace(getEnvOrDefault("C4A_DEFAULT_PROFILE", "prod-strict")),
-		ActiveImageVersion:      strings.TrimSpace(getEnvOrDefault("C4A_ACTIVE_IMAGE_VERSION", "v1")),
-		DockerImage:             strings.TrimSpace(getEnvOrDefault("C4A_DOCKER_IMAGE", "alpine:3.20")),
-		DockerHost:              strings.TrimSpace(os.Getenv("C4A_DOCKER_HOST")),
-		ExecTimeout:             execTimeout,
-		ExecMaxStdoutBytes:      execMaxStdoutBytes,
-		ExecMaxStderrBytes:      execMaxStderrBytes,
-		FileMaxUploadBytes:      fileMaxUploadBytes,
-		FileMaxDownloadBytes:    fileMaxDownloadBytes,
-		WorkspaceDiskQuotaBytes: workspaceDiskQuotaBytes,
-		ReadTimeout:             10 * time.Second,
-		WriteTimeout:            30 * time.Second,
-		IdleTimeout:             60 * time.Second,
+		HTTPListenAddr:               getEnvOrDefault("C4A_HTTP_LISTEN_ADDR", ":8080"),
+		LogLevel:                     strings.ToLower(getEnvOrDefault("C4A_LOG_LEVEL", "info")),
+		DevMode:                      devMode,
+		APIKey:                       strings.TrimSpace(os.Getenv("CONTAINERS4AGENTS_API_KEY")),
+		DBDriver:                     strings.ToLower(getEnvOrDefault("C4A_DB_DRIVER", "postgres")),
+		DBDSN:                        strings.TrimSpace(os.Getenv("C4A_DB_DSN")),
+		AutoMigrate:                  autoMigrate,
+		StartupTimeout:               startupTimeout,
+		ShutdownTimeout:              shutdownTimeout,
+		DefaultProfile:               strings.TrimSpace(getEnvOrDefault("C4A_DEFAULT_PROFILE", defaultProfileName)),
+		ActiveImageVersion:           strings.TrimSpace(getEnvOrDefault("C4A_ACTIVE_IMAGE_VERSION", "v1")),
+		DockerImage:                  strings.TrimSpace(getEnvOrDefault("C4A_DOCKER_IMAGE", "alpine:3.20")),
+		DockerHost:                   strings.TrimSpace(os.Getenv("C4A_DOCKER_HOST")),
+		ResourcePolicyFile:           strings.TrimSpace(os.Getenv("C4A_RESOURCE_POLICY_FILE")),
+		ActiveExecLimit:              defaultPolicy.Capacity.ActiveExecLimit,
+		RunningContainerLimit:        defaultPolicy.Capacity.RunningContainerLimit,
+		TotalContainerLimit:          defaultPolicy.Capacity.TotalContainerLimit,
+		ContainerCPUMaxCores:         defaultProfile.CPU.MaxCores,
+		ContainerMemoryMaxBytes:      defaultProfile.Memory.MaxBytes,
+		ContainerTmpDiskMaxBytes:     defaultProfile.Disk.TmpMaxBytes,
+		ContainerPIDsMax:             defaultProfile.Process.PIDsMax,
+		ContainerExecUser:            defaultProfile.Exec.User,
+		ContainerDropAllCapabilities: defaultProfile.Security.DropAllCapabilities,
+		ContainerNoNewPrivileges:     defaultProfile.Security.NoNewPrivileges,
+		ContainerReadOnlyRootFS:      defaultProfile.Security.ReadOnlyRootFS,
+		ContainerSeccompProfilePath:  strings.TrimSpace(os.Getenv("C4A_SECCOMP_PROFILE_PATH")),
+		ContainerFileCountMax:        defaultProfile.Disk.FileCountMax,
+		ExecTimeout:                  execTimeout,
+		ExecMaxStdoutBytes:           execMaxStdoutBytes,
+		ExecMaxStderrBytes:           execMaxStderrBytes,
+		FileMaxUploadBytes:           fileMaxUploadBytes,
+		FileMaxDownloadBytes:         fileMaxDownloadBytes,
+		WorkspaceDiskQuotaBytes:      workspaceDiskQuotaBytes,
+		ReadTimeout:                  10 * time.Second,
+		WriteTimeout:                 30 * time.Second,
+		IdleTimeout:                  60 * time.Second,
 	}
 
 	if cfg.HTTPListenAddr == "" {
@@ -150,6 +187,15 @@ func Load() (Config, error) {
 	}
 	if cfg.WorkspaceDiskQuotaBytes <= 0 {
 		return Config{}, fmt.Errorf("C4A_WORKSPACE_DISK_QUOTA_BYTES must be greater than zero")
+	}
+	if cfg.ActiveExecLimit <= 0 || cfg.RunningContainerLimit <= 0 || cfg.TotalContainerLimit <= 0 {
+		return Config{}, fmt.Errorf("capacity limits must be greater than zero")
+	}
+	if cfg.ActiveExecLimit > cfg.RunningContainerLimit || cfg.RunningContainerLimit > cfg.TotalContainerLimit {
+		return Config{}, fmt.Errorf("capacity limits must satisfy active <= running <= total")
+	}
+	if cfg.ContainerCPUMaxCores <= 0 || cfg.ContainerMemoryMaxBytes <= 0 || cfg.ContainerTmpDiskMaxBytes <= 0 || cfg.ContainerPIDsMax <= 0 || cfg.ContainerFileCountMax <= 0 {
+		return Config{}, fmt.Errorf("container runtime defaults must be greater than zero")
 	}
 
 	return cfg, nil

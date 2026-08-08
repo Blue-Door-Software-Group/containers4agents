@@ -229,6 +229,7 @@ stateDiagram-v2
 - Read-only root filesystem when feasible; writable workspace root only.
 - Capability minimization with strict syscall policy.
 - Per-container process and resource ceilings.
+- Runtime hardening controls are sourced from the active resource policy profile and mapped into provider create/exec behavior.
 
 ### Network policy
 
@@ -288,6 +289,14 @@ flowchart LR
 - `C4A_STOPPED_RETENTION`
 - `C4A_DEFAULT_PROFILE=prod-strict`
 - `C4A_ACTIVE_IMAGE_VERSION`
+- `C4A_RESOURCE_POLICY_FILE` (optional; when unset or unreadable, compiled defaults are used)
+
+### Resource policy loading semantics
+
+- Complex limit/isolation policy is loaded from a file path provided by `C4A_RESOURCE_POLICY_FILE`.
+- If the path is unset, or the file is unreadable, startup uses compiled `prod-strict` defaults.
+- If the file is readable but invalid, startup fails fast.
+- Capacity invariants are validated at load time (`active_exec_limit <= running_container_limit <= total_container_limit`).
 
 ## 8) Reliability and Operations
 

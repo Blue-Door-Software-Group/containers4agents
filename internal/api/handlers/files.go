@@ -169,6 +169,8 @@ func writeFileError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, files.ErrPathViolation):
 		apierrors.Write(w, requestID, apierrors.BadRequest("invalid workspace path"))
+	case errors.Is(err, files.ErrDiskQuotaExceeded):
+		apierrors.Write(w, requestID, apierrors.PayloadTooLarge("workspace disk quota exceeded"))
 	case errors.Is(err, files.ErrPayloadTooLarge):
 		apierrors.Write(w, requestID, apierrors.PayloadTooLarge("file payload exceeds configured limit"))
 	case errors.Is(err, files.ErrContainerNotFound), errors.Is(err, files.ErrFileNotFound):

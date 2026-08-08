@@ -1,0 +1,34 @@
+version: v1
+active_profile: prod-strict
+
+capacity:
+  active_exec_limit: 10
+  running_container_limit: 30
+  total_container_limit: 100
+
+profiles:
+  prod-strict:
+    cpu:
+      max_cores: 2.0
+    memory:
+      max_bytes: 3221225472
+    disk:
+      workspace_max_bytes: 10737418240
+      tmp_max_bytes: 2147483648
+      file_count_max: 100000
+    process:
+      pids_max: 256
+    exec:
+      timeout_default_seconds: 120
+      timeout_max_seconds: 300
+      stdout_max_bytes: 4194304
+      stderr_max_bytes: 4194304
+      max_concurrent_per_container: 1
+      user: "65534:65534"
+    files:
+      max_upload_bytes: 67108864
+      max_download_bytes: 67108864
+    security:
+      drop_all_capabilities: true
+      no_new_privileges: true
+      read_only_root_fs: false

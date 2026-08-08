@@ -11,6 +11,19 @@ type SandboxSpec struct {
 	Profile      string
 	ImageVersion string
 	Image        string
+	Runtime      RuntimeOptions
+}
+
+type RuntimeOptions struct {
+	CPUMaxCores         float64
+	MemoryMaxBytes      int64
+	TmpDiskMaxBytes     int64
+	PIDsMax             int
+	ExecUser            string
+	DropAllCapabilities bool
+	NoNewPrivileges     bool
+	ReadOnlyRootFS      bool
+	SeccompProfilePath  string
 }
 
 type ProviderContainer struct {
@@ -23,6 +36,7 @@ type ExecRequest struct {
 	Timeout        time.Duration
 	MaxStdoutBytes int
 	MaxStderrBytes int
+	User           string
 }
 
 type ExecResult struct {

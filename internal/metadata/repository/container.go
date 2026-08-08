@@ -49,6 +49,9 @@ type ContainerRepository interface {
 	UpdateStateIfCurrent(ctx context.Context, params UpdateStateParams, expectedCurrentState string) (*Container, error)
 	BeginExecution(ctx context.Context, externalID string, expectedState string) error
 	EndExecution(ctx context.Context, externalID string) error
+	CountByState(ctx context.Context, state string) (int, error)
+	CountTotal(ctx context.Context) (int, error)
+	CountExecutionInProgress(ctx context.Context) (int, error)
 }
 
 type EntContainerRepository struct {
@@ -226,6 +229,30 @@ func (r *EntContainerRepository) EndExecution(ctx context.Context, externalID st
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (r *EntContainerRepository) CountByState(ctx context.Context, state string) (int, error) {
+	count, err := r.client.ContainerMetadata.Query().Where(containermetadata.StateEQ(state)).Count(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("count containers by state %q: %w", state, err)
+	}
+	return count, nil
+}
+
+func (r *EntContainerRepository) CountTotal(ctx context.Context) (int, error) {
+	count, err := r.client.ContainerMetadata.Query().Count(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("count total containers: %w", err)
+	}
+	return count, nil
+}
+
+func (r *EntContainerRepository) CountExecutionInProgress(ctx context.Context) (int, error) {
+	count, err := r.client.ContainerMetadata.Query().Where(containermetadata.ExecInProgressEQ(true)).Count(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("count in-progress executions: %w", err)
+	}
+	return count, nil
 }
 
 func mapRow(row *ent.ContainerMetadata) *Container {

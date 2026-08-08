@@ -31,16 +31,46 @@ func (p *Provider) CreateSandbox(ctx context.Context, spec types.SandboxSpec) (t
 		return types.ProviderContainer{}, err
 	}
 
-	containerID, err := p.runDocker(
-		ctx,
+	createArgs := []string{
 		"create",
 		"--network", "none",
 		"-w", "/workspace",
-		"--label", "c4a.external_id="+spec.ExternalID,
-		"--label", "c4a.profile="+spec.Profile,
-		"--label", "c4a.image_version="+spec.ImageVersion,
+		"--label", "c4a.external_id=" + spec.ExternalID,
+		"--label", "c4a.profile=" + spec.Profile,
+		"--label", "c4a.image_version=" + spec.ImageVersion,
+	}
+	if spec.Runtime.CPUMaxCores > 0 {
+		createArgs = append(createArgs, "--cpus", fmt.Sprintf("%.2f", spec.Runtime.CPUMaxCores))
+	}
+	if spec.Runtime.MemoryMaxBytes > 0 {
+		createArgs = append(createArgs, "--memory", strconv.FormatInt(spec.Runtime.MemoryMaxBytes, 10), "--memory-swap", strconv.FormatInt(spec.Runtime.MemoryMaxBytes, 10))
+	}
+	if spec.Runtime.PIDsMax > 0 {
+		createArgs = append(createArgs, "--pids-limit", strconv.Itoa(spec.Runtime.PIDsMax))
+	}
+	if spec.Runtime.DropAllCapabilities {
+		createArgs = append(createArgs, "--cap-drop", "ALL")
+	}
+	if spec.Runtime.NoNewPrivileges {
+		createArgs = append(createArgs, "--security-opt", "no-new-privileges")
+	}
+	if spec.Runtime.SeccompProfilePath != "" {
+		createArgs = append(createArgs, "--security-opt", "seccomp="+spec.Runtime.SeccompProfilePath)
+	}
+	if spec.Runtime.ReadOnlyRootFS {
+		createArgs = append(createArgs, "--read-only")
+	}
+	if spec.Runtime.TmpDiskMaxBytes > 0 {
+		createArgs = append(createArgs, "--tmpfs", fmt.Sprintf("/tmp:rw,noexec,nosuid,size=%d", spec.Runtime.TmpDiskMaxBytes))
+	}
+
+	createArgs = append(createArgs,
 		spec.Image,
-		"sh", "-lc", "mkdir -p /workspace && sleep infinity",
+		"sh", "-lc", "mkdir -p /workspace && chmod 0777 /workspace && sleep infinity",
+	)
+
+	containerID, err := p.runDocker(
+		ctx, createArgs...,
 	)
 	if err != nil {
 		return types.ProviderContainer{}, mapDockerErr(err)
@@ -90,7 +120,11 @@ func (p *Provider) Exec(ctx context.Context, providerRef string, req types.ExecR
 	stderrBuffer := newLimitedBuffer(req.MaxStderrBytes)
 
 	args := make([]string, 0, 5+len(req.Command))
-	args = append(args, "exec", "-w", "/workspace", providerRef)
+	args = append(args, "exec", "-w", "/workspace")
+	if strings.TrimSpace(req.User) != "" {
+		args = append(args, "--user", req.User)
+	}
+	args = append(args, providerRef)
 	args = append(args, req.Command...)
 
 	command := exec.CommandContext(ctx, "docker", args...)
@@ -123,15 +157,27 @@ func (p *Provider) Exec(ctx context.Context, providerRef string, req types.ExecR
 	if errors.As(err, &exitErr) {
 		exitCode := exitErr.ExitCode()
 		result.ExitCode = &exitCode
-		if strings.Contains(result.Stderr, "is not running") {
-			result.Status = "killed"
-		} else {
-			result.Status = "user_error"
-		}
+		result.Status = mapExecExitStatus(result.Stderr, exitCode)
 		return result, nil
 	}
 
 	return types.ExecResult{}, mapDockerErr(fmt.Errorf("docker %s: %w", strings.Join(args, " "), err))
+}
+
+func mapExecExitStatus(stderr string, exitCode int) string {
+	message := strings.ToLower(stderr)
+	switch {
+	case strings.Contains(message, "out of memory"), strings.Contains(message, "oom"), exitCode == 137:
+		return "oom"
+	case strings.Contains(message, "no space left on device"), strings.Contains(message, "disk quota exceeded"):
+		return "disk_quota"
+	case strings.Contains(message, "operation not permitted"), strings.Contains(message, "permission denied"), strings.Contains(message, "seccomp"):
+		return "sandbox_violation"
+	case strings.Contains(message, "is not running"):
+		return "killed"
+	default:
+		return "user_error"
+	}
 }
 
 func (p *Provider) UploadFile(ctx context.Context, providerRef string, path string, content io.Reader) error {
@@ -446,6 +492,8 @@ func (p *Provider) mapFileOpErr(err error, stderr string, operation string, path
 		return types.ErrProviderNotFound
 	case strings.Contains(message, "Cannot connect to the Docker daemon"):
 		return types.ErrProviderUnavailable
+	case strings.Contains(strings.ToLower(message), "no space left on device"), strings.Contains(strings.ToLower(message), "disk quota exceeded"):
+		return types.ErrProviderQuotaExceeded
 	case errors.Is(err, context.DeadlineExceeded):
 		return types.ErrProviderTimeout
 	default:
