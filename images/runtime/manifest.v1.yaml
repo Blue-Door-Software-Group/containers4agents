@@ -1,0 +1,78 @@
+version: v1
+base_image: python:3.12-slim-bookworm
+workspace:
+  root: /workspace
+  user: c4a
+  uid: 10001
+packages:
+  apt:
+    - bash
+    - ca-certificates
+    - coreutils
+    - file
+    - findutils
+    - gawk
+    - grep
+    - jq
+    - libmagic1
+    - libreoffice-calc
+    - libreoffice-impress
+    - libreoffice-writer
+    - pandoc
+    - p7zip-full
+    - poppler-utils
+    - procps
+    - qpdf
+    - sed
+    - tar
+    - unzip
+    - xz-utils
+    - zip
+    - fonts-dejavu
+    - fonts-liberation
+    - fonts-noto-core
+    - fonts-noto-cjk
+    - fonts-noto-color-emoji
+  pip:
+    - numpy
+    - pandas
+    - pyarrow
+    - tabulate
+    - openpyxl
+    - XlsxWriter
+    - python-docx
+    - python-pptx
+    - msoffcrypto-tool
+    - pypdf[crypto]
+    - pdfplumber
+    - pypdfium2
+    - reportlab
+    - Pillow
+    - matplotlib
+    - CairoSVG
+    - lxml
+    - beautifulsoup4
+    - defusedxml
+    - markdown
+    - Jinja2
+    - PyYAML
+    - ruamel.yaml
+    - tomlkit
+    - odfpy
+    - nbformat
+    - EbookLib
+    - striprtf
+    - icalendar
+    - vobject
+    - extract-msg
+    - xlrd
+    - pyxlsb
+    - pyreadstat
+    - python-magic
+    - charset-normalizer
+    - py7zr
+    - zstandard
+excluded_features:
+  - ocr
+shell:
+  command: ["bash", "-lc", "sleep infinity"]

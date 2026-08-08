@@ -1,0 +1,12 @@
+.git
+.github
+.cursor
+.DS_Store
+*.log
+tmp
+dist
+bin
+coverage
+coverage.out
+**/*_test.go
+docs
