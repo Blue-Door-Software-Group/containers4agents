@@ -1,13 +1,16 @@
 package docker
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/provider/types"
 )
@@ -132,23 +135,196 @@ func (p *Provider) Exec(ctx context.Context, providerRef string, req types.ExecR
 }
 
 func (p *Provider) UploadFile(ctx context.Context, providerRef string, path string, content []byte) error {
-	return types.ErrProviderNotImplemented
+	if providerRef == "" {
+		return fmt.Errorf("%w: missing provider reference", types.ErrProviderInternal)
+	}
+	if path == "" {
+		return fmt.Errorf("%w: missing file path", types.ErrProviderInternal)
+	}
+
+	script := strings.Join([]string{
+		"set -eu",
+		`rel="$1"`,
+		`dest="/workspace/$rel"`,
+		`parent=$(dirname "$dest")`,
+		`mkdir -p "$parent"`,
+		`resolved_parent=$(readlink -f "$parent")`,
+		`case "$resolved_parent/" in /workspace/*) ;; *) echo "path escapes workspace" >&2; exit 42;; esac`,
+		`final="$resolved_parent/$(basename "$dest")"`,
+		`if [ -L "$final" ]; then`,
+		`  resolved_final=$(readlink -f "$final" || true)`,
+		`  case "$resolved_final" in /workspace/*) ;; *) echo "symlink escapes workspace" >&2; exit 42;; esac`,
+		`fi`,
+		`cat > "$final"`,
+	}, "; ")
+
+	_, stderr, err := p.runDockerCommand(ctx, content, "exec", "-i", providerRef, "sh", "-lc", script, "--", path)
+	if err != nil {
+		return p.mapFileOpErr(err, stderr, "upload", path)
+	}
+	return nil
 }
 
 func (p *Provider) DownloadFile(ctx context.Context, providerRef string, path string) ([]byte, error) {
-	return nil, types.ErrProviderNotImplemented
+	if providerRef == "" {
+		return nil, fmt.Errorf("%w: missing provider reference", types.ErrProviderInternal)
+	}
+	if path == "" {
+		return nil, fmt.Errorf("%w: missing file path", types.ErrProviderInternal)
+	}
+
+	script := strings.Join([]string{
+		"set -eu",
+		`rel="$1"`,
+		`target="/workspace/$rel"`,
+		`resolved=$(readlink -f "$target" 2>/dev/null || true)`,
+		`if [ -z "$resolved" ]; then echo "not found" >&2; exit 44; fi`,
+		`case "$resolved" in /workspace/*) ;; *) echo "path escapes workspace" >&2; exit 42;; esac`,
+		`if [ ! -f "$resolved" ]; then echo "not a regular file" >&2; exit 45; fi`,
+		`cat "$resolved"`,
+	}, "; ")
+
+	stdout, stderr, err := p.runDockerCommand(ctx, nil, "exec", providerRef, "sh", "-lc", script, "--", path)
+	if err != nil {
+		return nil, p.mapFileOpErr(err, stderr, "download", path)
+	}
+	return stdout, nil
 }
 
 func (p *Provider) DeletePath(ctx context.Context, providerRef string, path string) error {
-	return types.ErrProviderNotImplemented
+	if providerRef == "" {
+		return fmt.Errorf("%w: missing provider reference", types.ErrProviderInternal)
+	}
+	if path == "" {
+		return fmt.Errorf("%w: missing file path", types.ErrProviderInternal)
+	}
+
+	script := strings.Join([]string{
+		"set -eu",
+		`rel="$1"`,
+		`target="/workspace/$rel"`,
+		`resolved=$(readlink -f "$target" 2>/dev/null || true)`,
+		`if [ -z "$resolved" ]; then echo "not found" >&2; exit 44; fi`,
+		`case "$resolved" in /workspace/*) ;; *) echo "path escapes workspace" >&2; exit 42;; esac`,
+		`if [ "$resolved" = "/workspace" ]; then echo "cannot delete workspace root" >&2; exit 42; fi`,
+		`rm -rf -- "$resolved"`,
+	}, "; ")
+
+	_, stderr, err := p.runDockerCommand(ctx, nil, "exec", providerRef, "sh", "-lc", script, "--", path)
+	if err != nil {
+		return p.mapFileOpErr(err, stderr, "delete", path)
+	}
+	return nil
 }
 
 func (p *Provider) ListWorkspace(ctx context.Context, providerRef string) ([]types.FileEntry, error) {
-	return nil, types.ErrProviderNotImplemented
+	if providerRef == "" {
+		return nil, fmt.Errorf("%w: missing provider reference", types.ErrProviderInternal)
+	}
+
+	script := strings.Join([]string{
+		"set -eu",
+		`find /workspace -mindepth 1 -print0 | while IFS= read -r -d '' p; do`,
+		`  rel="${p#/workspace/}"`,
+		`  name="${rel##*/}"`,
+		`  if [ -d "$p" ]; then`,
+		`    typ="directory"; size="0"; hash=""`,
+		`  elif [ -f "$p" ]; then`,
+		`    typ="file"; size=$(wc -c < "$p" | tr -d ' '); hash=$(sha256sum "$p" | awk '{print $1}')`,
+		`  elif [ -L "$p" ]; then`,
+		`    typ="symlink"; size="0"; hash=""`,
+		`  else`,
+		`    typ="other"; size="0"; hash=""`,
+		`  fi`,
+		`  mtime=$(stat -c %Y "$p" 2>/dev/null || stat -f %m "$p")`,
+		`  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$rel" "$name" "$typ" "$size" "$mtime" "$hash"`,
+		`done`,
+	}, "; ")
+
+	stdout, stderr, err := p.runDockerCommand(ctx, nil, "exec", providerRef, "sh", "-lc", script)
+	if err != nil {
+		return nil, p.mapFileOpErr(err, stderr, "manifest", "")
+	}
+
+	text := strings.TrimSpace(string(stdout))
+	if text == "" {
+		return []types.FileEntry{}, nil
+	}
+
+	lines := strings.Split(text, "\n")
+	entries := make([]types.FileEntry, 0, len(lines))
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 6)
+		if len(parts) != 6 {
+			return nil, fmt.Errorf("%w: malformed manifest entry %q", types.ErrProviderInternal, line)
+		}
+
+		size, parseErr := strconv.ParseInt(parts[3], 10, 64)
+		if parseErr != nil {
+			return nil, fmt.Errorf("%w: invalid file size %q", types.ErrProviderInternal, parts[3])
+		}
+		mtimeUnix, parseErr := strconv.ParseInt(parts[4], 10, 64)
+		if parseErr != nil {
+			return nil, fmt.Errorf("%w: invalid mtime %q", types.ErrProviderInternal, parts[4])
+		}
+
+		entry := types.FileEntry{
+			Path:      parts[0],
+			Name:      parts[1],
+			Type:      parts[2],
+			SizeBytes: size,
+			ModTime:   time.Unix(mtimeUnix, 0).UTC(),
+		}
+		if entry.Type == "file" && parts[5] != "" {
+			entry.Hash = &types.FileHash{
+				Algorithm: "sha256",
+				Value:     parts[5],
+			}
+		}
+		entries = append(entries, entry)
+	}
+
+	return entries, nil
 }
 
 func (p *Provider) ReadUsage(ctx context.Context, providerRef string) (types.UsageSnapshot, error) {
-	return types.UsageSnapshot{}, nil
+	if providerRef == "" {
+		return types.UsageSnapshot{}, fmt.Errorf("%w: missing provider reference", types.ErrProviderInternal)
+	}
+
+	script := strings.Join([]string{
+		"set -eu",
+		`bytes=$(find /workspace -type f -exec wc -c {} + 2>/dev/null | awk 'BEGIN{s=0} { if ($2 != "total") s += $1 } END { print s + 0 }')`,
+		`count=$(find /workspace -type f 2>/dev/null | wc -l | tr -d ' ')`,
+		`printf '%s\t%s\n' "$bytes" "$count"`,
+	}, "; ")
+
+	stdout, stderr, err := p.runDockerCommand(ctx, nil, "exec", providerRef, "sh", "-lc", script)
+	if err != nil {
+		return types.UsageSnapshot{}, p.mapFileOpErr(err, stderr, "usage", "")
+	}
+
+	parts := strings.Split(strings.TrimSpace(string(stdout)), "\t")
+	if len(parts) != 2 {
+		return types.UsageSnapshot{}, fmt.Errorf("%w: malformed usage output %q", types.ErrProviderInternal, strings.TrimSpace(string(stdout)))
+	}
+
+	bytesUsed, parseErr := strconv.ParseInt(parts[0], 10, 64)
+	if parseErr != nil {
+		return types.UsageSnapshot{}, fmt.Errorf("%w: invalid usage bytes %q", types.ErrProviderInternal, parts[0])
+	}
+	fileCount, parseErr := strconv.ParseInt(parts[1], 10, 64)
+	if parseErr != nil {
+		return types.UsageSnapshot{}, fmt.Errorf("%w: invalid usage file count %q", types.ErrProviderInternal, parts[1])
+	}
+
+	return types.UsageSnapshot{
+		WorkspaceBytes: bytesUsed,
+		FileCount:      fileCount,
+	}, nil
 }
 
 func (p *Provider) State(ctx context.Context, providerRef string) (string, error) {
@@ -204,6 +380,66 @@ func (p *Provider) runDocker(ctx context.Context, args ...string) (string, error
 		return "", fmt.Errorf("docker %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return string(out), nil
+}
+
+func (p *Provider) runDockerCommand(ctx context.Context, stdin []byte, args ...string) ([]byte, string, error) {
+	command := exec.CommandContext(ctx, "docker", args...)
+	if p.host != "" {
+		command.Env = append(os.Environ(), "DOCKER_HOST="+p.host)
+	}
+	if stdin != nil {
+		command.Stdin = bytes.NewReader(stdin)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	command.Stdout = &stdout
+	command.Stderr = &stderr
+
+	err := command.Run()
+	return stdout.Bytes(), strings.TrimSpace(stderr.String()), err
+}
+
+func (p *Provider) mapFileOpErr(err error, stderr string, operation string, path string) error {
+	if err == nil {
+		return nil
+	}
+	if code, ok := dockerExitCode(err); ok {
+		switch code {
+		case 42:
+			return types.ErrProviderDenied
+		case 44:
+			return types.ErrProviderNotFound
+		case 45:
+			return types.ErrProviderDenied
+		}
+	}
+
+	message := strings.TrimSpace(stderr)
+	if message == "" {
+		message = err.Error()
+	}
+	switch {
+	case strings.Contains(message, "No such container"):
+		return types.ErrProviderNotFound
+	case strings.Contains(message, "Cannot connect to the Docker daemon"):
+		return types.ErrProviderUnavailable
+	case errors.Is(err, context.DeadlineExceeded):
+		return types.ErrProviderTimeout
+	default:
+		if path != "" {
+			return fmt.Errorf("%w: %s %s: %s", types.ErrProviderInternal, operation, path, message)
+		}
+		return fmt.Errorf("%w: %s: %s", types.ErrProviderInternal, operation, message)
+	}
+}
+
+func dockerExitCode(err error) (int, bool) {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		return 0, false
+	}
+	return exitErr.ExitCode(), true
 }
 
 var _ types.ContainerProvider = (*Provider)(nil)

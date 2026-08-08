@@ -17,6 +17,7 @@ import (
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/auth"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/config"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/execution"
+	filesvc "github.com/Blue-Door-Software-Group/containers4agents/internal/files"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/lifecycle"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/metadata/entrepo"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/metadata/migrations"
@@ -46,23 +47,26 @@ func setupPhase1IntegrationEnv(t *testing.T) *phase1IntegrationEnv {
 	}
 
 	cfg := config.Config{
-		HTTPListenAddr:     ":0",
-		LogLevel:           "info",
-		APIKey:             "integration-key",
-		DBDriver:           "postgres",
-		DBDSN:              dsn,
-		AutoMigrate:        true,
-		StartupTimeout:     20 * time.Second,
-		ShutdownTimeout:    10 * time.Second,
-		DefaultProfile:     "prod-strict",
-		ActiveImageVersion: "v1",
-		DockerImage:        envOrDefault("C4A_TEST_DOCKER_IMAGE", "alpine:3.20"),
-		ExecTimeout:        2 * time.Second,
-		ExecMaxStdoutBytes: 4096,
-		ExecMaxStderrBytes: 4096,
-		ReadTimeout:        10 * time.Second,
-		WriteTimeout:       30 * time.Second,
-		IdleTimeout:        60 * time.Second,
+		HTTPListenAddr:          ":0",
+		LogLevel:                "info",
+		APIKey:                  "integration-key",
+		DBDriver:                "postgres",
+		DBDSN:                   dsn,
+		AutoMigrate:             true,
+		StartupTimeout:          20 * time.Second,
+		ShutdownTimeout:         10 * time.Second,
+		DefaultProfile:          "prod-strict",
+		ActiveImageVersion:      "v1",
+		DockerImage:             envOrDefault("C4A_TEST_DOCKER_IMAGE", "alpine:3.20"),
+		ExecTimeout:             2 * time.Second,
+		ExecMaxStdoutBytes:      4096,
+		ExecMaxStderrBytes:      4096,
+		FileMaxUploadBytes:      1024 * 1024,
+		FileMaxDownloadBytes:    1024 * 1024,
+		WorkspaceDiskQuotaBytes: 1024 * 1024 * 1024,
+		ReadTimeout:             10 * time.Second,
+		WriteTimeout:            30 * time.Second,
+		IdleTimeout:             60 * time.Second,
 	}
 
 	logger := obslog.New(cfg.LogLevel)
@@ -86,14 +90,16 @@ func setupPhase1IntegrationEnv(t *testing.T) *phase1IntegrationEnv {
 	containerRepo := repository.NewEntContainerRepository(repoClient.Ent)
 	lifecycleSvc := lifecycle.NewService(containerRepo, dockerProvider, cfg)
 	executionSvc := execution.NewService(containerRepo, dockerProvider, cfg)
+	fileSvc := filesvc.NewService(containerRepo, dockerProvider, cfg)
 	containerHandler := handlers.NewContainerHandler(lifecycleSvc)
 	executionHandler := handlers.NewExecutionHandler(executionSvc)
+	fileHandler := handlers.NewFileHandler(fileSvc, cfg.FileMaxUploadBytes)
 	keyManager, err := auth.NewKeyManager(cfg.APIKey, false)
 	if err != nil {
 		t.Fatalf("create key manager: %v", err)
 	}
 
-	handler := NewHandler(metrics.New(), middleware.Auth(keyManager), containerHandler, executionHandler)
+	handler := NewHandler(metrics.New(), middleware.Auth(keyManager), containerHandler, executionHandler, fileHandler)
 	httpServer := httptest.NewServer(handler)
 
 	return &phase1IntegrationEnv{
@@ -175,11 +181,13 @@ func TestPhase1CreateStatusStopAndRestartPersistence(t *testing.T) {
 	repo := repository.NewEntContainerRepository(env.repoClient.Ent)
 	lifecycleSvc := lifecycle.NewService(repo, env.provider, env.cfg)
 	executionSvc := execution.NewService(repo, env.provider, env.cfg)
+	fileSvc := filesvc.NewService(repo, env.provider, env.cfg)
 	handler := NewHandler(
 		metrics.New(),
 		middleware.Auth(mustKeyManager(t, "integration-key")),
 		handlers.NewContainerHandler(lifecycleSvc),
 		handlers.NewExecutionHandler(executionSvc),
+		handlers.NewFileHandler(fileSvc, env.cfg.FileMaxUploadBytes),
 	)
 	env.httpServer = httptest.NewServer(handler)
 

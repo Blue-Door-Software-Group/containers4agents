@@ -13,7 +13,7 @@ import (
 )
 
 func TestHealthzAndMetricsAvailable(t *testing.T) {
-	handler := NewHandler(metrics.New(), nil, nil, nil)
+	handler := NewHandler(metrics.New(), nil, nil, nil, nil)
 	testServer := httptest.NewServer(handler)
 	defer testServer.Close()
 
@@ -39,7 +39,7 @@ func TestHealthzAndMetricsAvailable(t *testing.T) {
 }
 
 func TestNotFoundReturnsStructuredErrorAndRequestID(t *testing.T) {
-	handler := NewHandler(metrics.New(), nil, nil, nil)
+	handler := NewHandler(metrics.New(), nil, nil, nil, nil)
 	testServer := httptest.NewServer(handler)
 	defer testServer.Close()
 

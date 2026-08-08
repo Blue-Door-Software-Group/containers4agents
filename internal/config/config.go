@@ -9,25 +9,28 @@ import (
 )
 
 type Config struct {
-	HTTPListenAddr     string
-	LogLevel           string
-	DevMode            bool
-	APIKey             string
-	DBDriver           string
-	DBDSN              string
-	AutoMigrate        bool
-	StartupTimeout     time.Duration
-	ShutdownTimeout    time.Duration
-	DefaultProfile     string
-	ActiveImageVersion string
-	DockerImage        string
-	DockerHost         string
-	ExecTimeout        time.Duration
-	ExecMaxStdoutBytes int
-	ExecMaxStderrBytes int
-	ReadTimeout        time.Duration
-	WriteTimeout       time.Duration
-	IdleTimeout        time.Duration
+	HTTPListenAddr          string
+	LogLevel                string
+	DevMode                 bool
+	APIKey                  string
+	DBDriver                string
+	DBDSN                   string
+	AutoMigrate             bool
+	StartupTimeout          time.Duration
+	ShutdownTimeout         time.Duration
+	DefaultProfile          string
+	ActiveImageVersion      string
+	DockerImage             string
+	DockerHost              string
+	ExecTimeout             time.Duration
+	ExecMaxStdoutBytes      int
+	ExecMaxStderrBytes      int
+	FileMaxUploadBytes      int
+	FileMaxDownloadBytes    int
+	WorkspaceDiskQuotaBytes int64
+	ReadTimeout             time.Duration
+	WriteTimeout            time.Duration
+	IdleTimeout             time.Duration
 }
 
 func Load() (Config, error) {
@@ -59,27 +62,42 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	fileMaxUploadBytes, err := getEnvInt("C4A_FILE_MAX_UPLOAD_BYTES", 32*1024*1024)
+	if err != nil {
+		return Config{}, err
+	}
+	fileMaxDownloadBytes, err := getEnvInt("C4A_FILE_MAX_DOWNLOAD_BYTES", 32*1024*1024)
+	if err != nil {
+		return Config{}, err
+	}
+	workspaceDiskQuotaBytes, err := getEnvInt64("C4A_WORKSPACE_DISK_QUOTA_BYTES", 1024*1024*1024)
+	if err != nil {
+		return Config{}, err
+	}
 
 	cfg := Config{
-		HTTPListenAddr:     getEnvOrDefault("C4A_HTTP_LISTEN_ADDR", ":8080"),
-		LogLevel:           strings.ToLower(getEnvOrDefault("C4A_LOG_LEVEL", "info")),
-		DevMode:            devMode,
-		APIKey:             strings.TrimSpace(os.Getenv("CONTAINERS4AGENTS_API_KEY")),
-		DBDriver:           strings.ToLower(getEnvOrDefault("C4A_DB_DRIVER", "postgres")),
-		DBDSN:              strings.TrimSpace(os.Getenv("C4A_DB_DSN")),
-		AutoMigrate:        autoMigrate,
-		StartupTimeout:     startupTimeout,
-		ShutdownTimeout:    shutdownTimeout,
-		DefaultProfile:     strings.TrimSpace(getEnvOrDefault("C4A_DEFAULT_PROFILE", "prod-strict")),
-		ActiveImageVersion: strings.TrimSpace(getEnvOrDefault("C4A_ACTIVE_IMAGE_VERSION", "v1")),
-		DockerImage:        strings.TrimSpace(getEnvOrDefault("C4A_DOCKER_IMAGE", "alpine:3.20")),
-		DockerHost:         strings.TrimSpace(os.Getenv("C4A_DOCKER_HOST")),
-		ExecTimeout:        execTimeout,
-		ExecMaxStdoutBytes: execMaxStdoutBytes,
-		ExecMaxStderrBytes: execMaxStderrBytes,
-		ReadTimeout:        10 * time.Second,
-		WriteTimeout:       30 * time.Second,
-		IdleTimeout:        60 * time.Second,
+		HTTPListenAddr:          getEnvOrDefault("C4A_HTTP_LISTEN_ADDR", ":8080"),
+		LogLevel:                strings.ToLower(getEnvOrDefault("C4A_LOG_LEVEL", "info")),
+		DevMode:                 devMode,
+		APIKey:                  strings.TrimSpace(os.Getenv("CONTAINERS4AGENTS_API_KEY")),
+		DBDriver:                strings.ToLower(getEnvOrDefault("C4A_DB_DRIVER", "postgres")),
+		DBDSN:                   strings.TrimSpace(os.Getenv("C4A_DB_DSN")),
+		AutoMigrate:             autoMigrate,
+		StartupTimeout:          startupTimeout,
+		ShutdownTimeout:         shutdownTimeout,
+		DefaultProfile:          strings.TrimSpace(getEnvOrDefault("C4A_DEFAULT_PROFILE", "prod-strict")),
+		ActiveImageVersion:      strings.TrimSpace(getEnvOrDefault("C4A_ACTIVE_IMAGE_VERSION", "v1")),
+		DockerImage:             strings.TrimSpace(getEnvOrDefault("C4A_DOCKER_IMAGE", "alpine:3.20")),
+		DockerHost:              strings.TrimSpace(os.Getenv("C4A_DOCKER_HOST")),
+		ExecTimeout:             execTimeout,
+		ExecMaxStdoutBytes:      execMaxStdoutBytes,
+		ExecMaxStderrBytes:      execMaxStderrBytes,
+		FileMaxUploadBytes:      fileMaxUploadBytes,
+		FileMaxDownloadBytes:    fileMaxDownloadBytes,
+		WorkspaceDiskQuotaBytes: workspaceDiskQuotaBytes,
+		ReadTimeout:             10 * time.Second,
+		WriteTimeout:            30 * time.Second,
+		IdleTimeout:             60 * time.Second,
 	}
 
 	if cfg.HTTPListenAddr == "" {
@@ -124,6 +142,15 @@ func Load() (Config, error) {
 	if cfg.ExecMaxStderrBytes <= 0 {
 		return Config{}, fmt.Errorf("C4A_EXEC_MAX_STDERR_BYTES must be greater than zero")
 	}
+	if cfg.FileMaxUploadBytes <= 0 {
+		return Config{}, fmt.Errorf("C4A_FILE_MAX_UPLOAD_BYTES must be greater than zero")
+	}
+	if cfg.FileMaxDownloadBytes <= 0 {
+		return Config{}, fmt.Errorf("C4A_FILE_MAX_DOWNLOAD_BYTES must be greater than zero")
+	}
+	if cfg.WorkspaceDiskQuotaBytes <= 0 {
+		return Config{}, fmt.Errorf("C4A_WORKSPACE_DISK_QUOTA_BYTES must be greater than zero")
+	}
 
 	return cfg, nil
 }
@@ -166,6 +193,18 @@ func getEnvInt(key string, fallback int) (int, error) {
 		return fallback, nil
 	}
 	parsed, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a valid integer", key)
+	}
+	return parsed, nil
+}
+
+func getEnvInt64(key string, fallback int64) (int64, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("%s must be a valid integer", key)
 	}

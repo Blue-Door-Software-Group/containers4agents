@@ -34,13 +34,22 @@ type ExecResult struct {
 }
 
 type FileEntry struct {
-	Path string
-	Type string
-	Size int64
+	Path      string
+	Name      string
+	Type      string
+	SizeBytes int64
+	ModTime   time.Time
+	Hash      *FileHash
+}
+
+type FileHash struct {
+	Algorithm string
+	Value     string
 }
 
 type UsageSnapshot struct {
 	WorkspaceBytes int64
+	FileCount      int64
 }
 
 type ContainerProvider interface {

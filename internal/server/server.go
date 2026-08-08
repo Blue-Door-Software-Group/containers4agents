@@ -37,6 +37,7 @@ func NewHandler(
 	authMw func(http.Handler) http.Handler,
 	containerHandler *handlers.ContainerHandler,
 	executionHandler *handlers.ExecutionHandler,
+	fileHandler *handlers.FileHandler,
 ) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /healthz", m.Middleware("/healthz", http.HandlerFunc(handlers.Health)))
@@ -50,6 +51,12 @@ func NewHandler(
 	}
 	if authMw != nil && executionHandler != nil {
 		mux.Handle("POST /v1/containers/{id}/exec", m.Middleware("/v1/containers:exec", authMw(http.HandlerFunc(executionHandler.Exec))))
+	}
+	if authMw != nil && fileHandler != nil {
+		mux.Handle("GET /v1/containers/{id}/files/manifest", m.Middleware("/v1/containers:files:manifest", authMw(http.HandlerFunc(fileHandler.Manifest))))
+		mux.Handle("PUT /v1/containers/{id}/files/{path...}", m.Middleware("/v1/containers:files:upload", authMw(http.HandlerFunc(fileHandler.Upload))))
+		mux.Handle("GET /v1/containers/{id}/files/{path...}", m.Middleware("/v1/containers:files:download", authMw(http.HandlerFunc(fileHandler.Download))))
+		mux.Handle("DELETE /v1/containers/{id}/files/{path...}", m.Middleware("/v1/containers:files:delete", authMw(http.HandlerFunc(fileHandler.Delete))))
 	}
 	mux.Handle("/", m.Middleware("/*", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestID := middleware.GetRequestID(r.Context())

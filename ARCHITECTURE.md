@@ -151,6 +151,17 @@ Execute command semantics:
 4. Manifest responses include root-relative path, type, size, mtime, and SHA-256.
 5. Disk usage metadata is refreshed for status visibility.
 
+File operation semantics:
+
+- API contract uses raw bytes for direct file transfer:
+  - `PUT /v1/containers/{id}/files/{path...}` for upload
+  - `GET /v1/containers/{id}/files/{path...}` for download
+  - `DELETE /v1/containers/{id}/files/{path...}` for delete
+  - `GET /v1/containers/{id}/files/manifest` for flat manifest + usage snapshot
+- File operations are allowed only for `running` and `stopped` containers.
+- `pruned`, `failed`, and transition states return structured conflict responses.
+- Provider implementations must reject symlink/path resolution that escapes `/workspace`.
+
 ### 4.4 Stop, resume, and prune
 
 1. Stop transitions `running -> stopping -> stopped`; workspace remains available for resume.

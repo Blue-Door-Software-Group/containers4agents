@@ -55,6 +55,15 @@ func TestLoadSuccess(t *testing.T) {
 	if cfg.ExecMaxStderrBytes != 1024*1024 {
 		t.Fatalf("expected default stderr cap 1048576, got %d", cfg.ExecMaxStderrBytes)
 	}
+	if cfg.FileMaxUploadBytes != 32*1024*1024 {
+		t.Fatalf("expected default upload cap 33554432, got %d", cfg.FileMaxUploadBytes)
+	}
+	if cfg.FileMaxDownloadBytes != 32*1024*1024 {
+		t.Fatalf("expected default download cap 33554432, got %d", cfg.FileMaxDownloadBytes)
+	}
+	if cfg.WorkspaceDiskQuotaBytes != 1024*1024*1024 {
+		t.Fatalf("expected default workspace quota 1073741824, got %d", cfg.WorkspaceDiskQuotaBytes)
+	}
 }
 
 func TestLoadRejectsInvalidAutoMigrate(t *testing.T) {
@@ -138,5 +147,29 @@ func TestLoadRejectsNonPositiveExecCaps(t *testing.T) {
 	_, err := Load()
 	if err == nil {
 		t.Fatal("expected error when C4A_EXEC_MAX_STDOUT_BYTES is not positive")
+	}
+}
+
+func TestLoadRejectsInvalidFileCaps(t *testing.T) {
+	t.Setenv("CONTAINERS4AGENTS_API_KEY", "test-key")
+	t.Setenv("C4A_DB_DSN", "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable")
+	t.Setenv("C4A_DB_DRIVER", "postgres")
+	t.Setenv("C4A_FILE_MAX_UPLOAD_BYTES", "bad-int")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for invalid C4A_FILE_MAX_UPLOAD_BYTES")
+	}
+}
+
+func TestLoadRejectsNonPositiveWorkspaceQuota(t *testing.T) {
+	t.Setenv("CONTAINERS4AGENTS_API_KEY", "test-key")
+	t.Setenv("C4A_DB_DSN", "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable")
+	t.Setenv("C4A_DB_DRIVER", "postgres")
+	t.Setenv("C4A_WORKSPACE_DISK_QUOTA_BYTES", "0")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error when C4A_WORKSPACE_DISK_QUOTA_BYTES is not positive")
 	}
 }

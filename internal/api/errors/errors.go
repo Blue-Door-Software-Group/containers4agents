@@ -87,3 +87,12 @@ func ServiceUnavailable(message string) APIError {
 		Retryable: true,
 	}
 }
+
+func PayloadTooLarge(message string) APIError {
+	return APIError{
+		Code:      "payload_too_large",
+		Message:   message,
+		Status:    http.StatusRequestEntityTooLarge,
+		Retryable: false,
+	}
+}
