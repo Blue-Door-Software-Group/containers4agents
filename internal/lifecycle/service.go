@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/config"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/metadata/repository"
+	obslog "github.com/Blue-Door-Software-Group/containers4agents/internal/observability/logging"
 	obsmetrics "github.com/Blue-Door-Software-Group/containers4agents/internal/observability/metrics"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/provider/types"
 )
@@ -122,7 +124,17 @@ func (s *Service) CreateContainer(ctx context.Context) (*ContainerView, error) {
 	})
 	if err != nil {
 		outcome = "provider_failure"
-		s.recordProviderFailure("create_sandbox", providerFailureCategory(err))
+		category := providerFailureCategory(err)
+		s.recordProviderFailure("create_sandbox", category)
+		obslog.WithRequestID(ctx, slog.Default()).WarnContext(
+			ctx,
+			"provider create sandbox failed",
+			"component", "lifecycle",
+			"operation", "create",
+			"error_category", obslog.ErrorCategory(err),
+			"provider_category", category,
+			"error", err.Error(),
+		)
 		if failedState, stateErr := NextState(row.State, TransitionCreateFailed); stateErr == nil {
 			_, _ = s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
 				ExternalID: row.ExternalID,
@@ -215,7 +227,17 @@ func (s *Service) StopContainer(ctx context.Context, externalID string) (*Contai
 	}
 	if err := s.provider.StopSandbox(ctx, *row.ProviderRef); err != nil {
 		outcome = "provider_failure"
-		s.recordProviderFailure("stop_sandbox", providerFailureCategory(err))
+		category := providerFailureCategory(err)
+		s.recordProviderFailure("stop_sandbox", category)
+		obslog.WithRequestID(ctx, slog.Default()).WarnContext(
+			ctx,
+			"provider stop sandbox failed",
+			"component", "lifecycle",
+			"operation", "stop",
+			"error_category", obslog.ErrorCategory(err),
+			"provider_category", category,
+			"error", err.Error(),
+		)
 		_, _ = s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
 			ExternalID: row.ExternalID,
 			State:      StateFailed,
@@ -295,7 +317,17 @@ func (s *Service) StartContainer(ctx context.Context, externalID string) (*Conta
 
 	if err := s.provider.StartSandbox(ctx, *row.ProviderRef); err != nil {
 		outcome = "provider_failure"
-		s.recordProviderFailure("start_sandbox", providerFailureCategory(err))
+		category := providerFailureCategory(err)
+		s.recordProviderFailure("start_sandbox", category)
+		obslog.WithRequestID(ctx, slog.Default()).WarnContext(
+			ctx,
+			"provider start sandbox failed",
+			"component", "lifecycle",
+			"operation", "start",
+			"error_category", obslog.ErrorCategory(err),
+			"provider_category", category,
+			"error", err.Error(),
+		)
 		if failedState, stateErr := NextState(startingState, TransitionStartFailed); stateErr == nil {
 			_, _ = s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
 				ExternalID: row.ExternalID,
@@ -373,7 +405,17 @@ func (s *Service) PruneContainer(ctx context.Context, externalID string) (*Conta
 
 	if err := s.provider.PruneSandbox(ctx, *row.ProviderRef); err != nil {
 		outcome = "provider_failure"
-		s.recordProviderFailure("prune_sandbox", providerFailureCategory(err))
+		category := providerFailureCategory(err)
+		s.recordProviderFailure("prune_sandbox", category)
+		obslog.WithRequestID(ctx, slog.Default()).WarnContext(
+			ctx,
+			"provider prune sandbox failed",
+			"component", "lifecycle",
+			"operation", "prune",
+			"error_category", obslog.ErrorCategory(err),
+			"provider_category", category,
+			"error", err.Error(),
+		)
 		if failedState, stateErr := NextState(pruningState, TransitionPruneFailed); stateErr == nil {
 			nextRetryAt := time.Now().UTC().Add(backoffForRetry(row.PruneRetryCount))
 			retryCount := row.PruneRetryCount + 1

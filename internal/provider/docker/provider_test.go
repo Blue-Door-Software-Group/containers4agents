@@ -70,6 +70,9 @@ func TestMapDockerErrConnectivityFallback(t *testing.T) {
 			if !errors.Is(got, types.ErrProviderUnavailable) {
 				t.Fatalf("expected ErrProviderUnavailable, got %v", got)
 			}
+			if got.Error() == types.ErrProviderUnavailable.Error() {
+				t.Fatalf("expected wrapped provider error details, got %q", got.Error())
+			}
 		})
 	}
 }

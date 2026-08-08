@@ -35,14 +35,14 @@ func New(host string) (*Provider, error) {
 
 	cli, err := client.NewClientWithOpts(opts...)
 	if err != nil {
-		return nil, types.ErrProviderUnavailable
+		return nil, fmt.Errorf("%w: init docker client: %v", types.ErrProviderUnavailable, err)
 	}
 
 	pingCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if _, err := cli.Ping(pingCtx); err != nil {
 		_ = cli.Close()
-		return nil, types.ErrProviderUnavailable
+		return nil, fmt.Errorf("%w: ping docker daemon: %v", types.ErrProviderUnavailable, err)
 	}
 
 	return &Provider{
@@ -483,22 +483,22 @@ func mapDockerErr(err error) error {
 	message := strings.ToLower(strings.TrimSpace(err.Error()))
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
-		return types.ErrProviderTimeout
+		return fmt.Errorf("%w: %v", types.ErrProviderTimeout, err)
 	case errdefs.IsNotFound(err):
-		return types.ErrProviderNotFound
+		return fmt.Errorf("%w: %v", types.ErrProviderNotFound, err)
 	case errdefs.IsUnavailable(err), errdefs.IsSystem(err):
-		return types.ErrProviderUnavailable
+		return fmt.Errorf("%w: %v", types.ErrProviderUnavailable, err)
 	case errdefs.IsConflict(err):
-		return types.ErrProviderConflict
+		return fmt.Errorf("%w: %v", types.ErrProviderConflict, err)
 	case errdefs.IsForbidden(err), errdefs.IsUnauthorized(err):
-		return types.ErrProviderDenied
+		return fmt.Errorf("%w: %v", types.ErrProviderDenied, err)
 	case strings.Contains(message, "cannot connect to the docker daemon"),
 		strings.Contains(message, "error during connect"),
 		strings.Contains(message, "is the docker daemon running"),
 		strings.Contains(message, "connection refused"),
 		strings.Contains(message, "no such host"):
 		// Preserve provider-unavailable semantics for untyped connectivity errors.
-		return types.ErrProviderUnavailable
+		return fmt.Errorf("%w: %v", types.ErrProviderUnavailable, err)
 	default:
 		return fmt.Errorf("%w: %v", types.ErrProviderInternal, err)
 	}
