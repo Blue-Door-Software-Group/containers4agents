@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/config"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/execution"
 	filesvc "github.com/Blue-Door-Software-Group/containers4agents/internal/files"
+	"github.com/Blue-Door-Software-Group/containers4agents/internal/idempotency"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/lifecycle"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/metadata/entrepo"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/metadata/migrations"
@@ -23,6 +25,7 @@ import (
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/observability/metrics"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/policy"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/provider/docker"
+	"github.com/Blue-Door-Software-Group/containers4agents/internal/reconcile"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/server"
 )
 
@@ -99,17 +102,31 @@ func run() error {
 	}()
 
 	containerRepo := repository.NewEntContainerRepository(repoClient.Ent)
+	idempotencySvc := idempotency.NewService(containerRepo, cfg.IdempotencyTTL)
 	lifecycleSvc := lifecycle.NewService(containerRepo, dockerProvider, cfg)
 	executionSvc := execution.NewService(containerRepo, dockerProvider, cfg)
 	fileSvc := filesvc.NewService(containerRepo, dockerProvider, cfg)
-	containerHandler := handlers.NewContainerHandler(lifecycleSvc)
+	containerHandler := handlers.NewContainerHandler(lifecycleSvc, idempotencySvc)
 	executionHandler := handlers.NewExecutionHandler(executionSvc)
-	fileHandler := handlers.NewFileHandler(fileSvc, cfg.FileMaxUploadBytes)
+	fileHandler := handlers.NewFileHandler(fileSvc, cfg.FileMaxUploadBytes, idempotencySvc)
 	authMw := middleware.Auth(keyManager)
 
 	metricsRegistry := metrics.New()
 	handler := server.NewHandler(metricsRegistry, authMw, containerHandler, executionHandler, fileHandler)
 	apiServer := server.New(cfg, logger, handler)
+	reconcileWorker := reconcile.NewWorker(
+		repoClient.DB,
+		containerRepo,
+		lifecycleSvc,
+		logger,
+		cfg.ReconcileEnabled,
+		cfg.ReconcileDistributed,
+		cfg.ReconcileInterval,
+		cfg.ReconcileFollowerRetry,
+		cfg.IdleStopTimeout,
+		cfg.StoppedRetentionTimeout,
+		cfg.ReconcileLockKey,
+	)
 
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, syscall.SIGTERM, syscall.SIGINT)
@@ -119,9 +136,40 @@ func run() error {
 	go func() {
 		serverErrCh <- apiServer.Start()
 	}()
+	reconcileCtx, reconcileCancel := context.WithCancel(context.Background())
+	defer reconcileCancel()
+	reconcileDoneCh := make(chan struct{})
+	go func() {
+		defer close(reconcileDoneCh)
+		for {
+			select {
+			case <-reconcileCtx.Done():
+				return
+			default:
+			}
+			if err := reconcileWorker.Run(reconcileCtx); err != nil {
+				if errors.Is(err, reconcile.ErrPermanentFailure) {
+					logger.Error("reconcile worker hit permanent failure; stopping worker loop", "error", err)
+					return
+				}
+				logger.Error("reconcile worker exited with error; retrying", "error", err)
+				timer := time.NewTimer(cfg.ReconcileFollowerRetry)
+				select {
+				case <-reconcileCtx.Done():
+					timer.Stop()
+					return
+				case <-timer.C:
+				}
+				continue
+			}
+			return
+		}
+	}()
 
 	shutdownWithTimeout := func(sig os.Signal) error {
 		logger.Info("shutdown signal received", "signal", sig.String())
+		reconcileCancel()
+		waitForReconcileShutdown(logger, reconcileDoneCh, cfg.ShutdownTimeout)
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer shutdownCancel()
 
@@ -141,10 +189,22 @@ func run() error {
 	for {
 		select {
 		case startErr := <-serverErrCh:
+			reconcileCancel()
+			waitForReconcileShutdown(logger, reconcileDoneCh, cfg.ShutdownTimeout)
 			return startErr
 		case sig := <-signalCh:
 			return shutdownWithTimeout(sig)
 		}
+	}
+}
+
+func waitForReconcileShutdown(logger *slog.Logger, done <-chan struct{}, timeout time.Duration) {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-timer.C:
+		logger.Warn("reconcile worker did not exit before timeout")
 	}
 }
 

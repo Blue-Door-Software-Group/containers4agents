@@ -30,6 +30,18 @@ const (
 	FieldProviderRef = "provider_ref"
 	// FieldLastActivityAt holds the string denoting the last_activity_at field in the database.
 	FieldLastActivityAt = "last_activity_at"
+	// FieldIdleStopDeadlineAt holds the string denoting the idle_stop_deadline_at field in the database.
+	FieldIdleStopDeadlineAt = "idle_stop_deadline_at"
+	// FieldRetentionPruneDeadlineAt holds the string denoting the retention_prune_deadline_at field in the database.
+	FieldRetentionPruneDeadlineAt = "retention_prune_deadline_at"
+	// FieldStoppedAt holds the string denoting the stopped_at field in the database.
+	FieldStoppedAt = "stopped_at"
+	// FieldPruneRetryCount holds the string denoting the prune_retry_count field in the database.
+	FieldPruneRetryCount = "prune_retry_count"
+	// FieldNextPruneRetryAt holds the string denoting the next_prune_retry_at field in the database.
+	FieldNextPruneRetryAt = "next_prune_retry_at"
+	// FieldLastPruneError holds the string denoting the last_prune_error field in the database.
+	FieldLastPruneError = "last_prune_error"
 	// FieldExecInProgress holds the string denoting the exec_in_progress field in the database.
 	FieldExecInProgress = "exec_in_progress"
 	// Table holds the table name of the containermetadata in the database.
@@ -47,6 +59,12 @@ var Columns = []string{
 	FieldImageVersion,
 	FieldProviderRef,
 	FieldLastActivityAt,
+	FieldIdleStopDeadlineAt,
+	FieldRetentionPruneDeadlineAt,
+	FieldStoppedAt,
+	FieldPruneRetryCount,
+	FieldNextPruneRetryAt,
+	FieldLastPruneError,
 	FieldExecInProgress,
 }
 
@@ -75,6 +93,8 @@ var (
 	ProfileValidator func(string) error
 	// ImageVersionValidator is a validator for the "image_version" field. It is called by the builders before save.
 	ImageVersionValidator func(string) error
+	// DefaultPruneRetryCount holds the default value on creation for the "prune_retry_count" field.
+	DefaultPruneRetryCount int
 	// DefaultExecInProgress holds the default value on creation for the "exec_in_progress" field.
 	DefaultExecInProgress bool
 	// DefaultID holds the default value on creation for the "id" field.
@@ -127,6 +147,36 @@ func ByProviderRef(opts ...sql.OrderTermOption) OrderOption {
 // ByLastActivityAt orders the results by the last_activity_at field.
 func ByLastActivityAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldLastActivityAt, opts...).ToFunc()
+}
+
+// ByIdleStopDeadlineAt orders the results by the idle_stop_deadline_at field.
+func ByIdleStopDeadlineAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldIdleStopDeadlineAt, opts...).ToFunc()
+}
+
+// ByRetentionPruneDeadlineAt orders the results by the retention_prune_deadline_at field.
+func ByRetentionPruneDeadlineAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRetentionPruneDeadlineAt, opts...).ToFunc()
+}
+
+// ByStoppedAt orders the results by the stopped_at field.
+func ByStoppedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldStoppedAt, opts...).ToFunc()
+}
+
+// ByPruneRetryCount orders the results by the prune_retry_count field.
+func ByPruneRetryCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPruneRetryCount, opts...).ToFunc()
+}
+
+// ByNextPruneRetryAt orders the results by the next_prune_retry_at field.
+func ByNextPruneRetryAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldNextPruneRetryAt, opts...).ToFunc()
+}
+
+// ByLastPruneError orders the results by the last_prune_error field.
+func ByLastPruneError(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLastPruneError, opts...).ToFunc()
 }
 
 // ByExecInProgress orders the results by the exec_in_progress field.

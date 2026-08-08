@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"slices"
+	"time"
 
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/config"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/lifecycle"
@@ -208,10 +209,26 @@ func (s *Service) mapProviderErr(err error) error {
 }
 
 func (s *Service) touchActivity(ctx context.Context, externalID string, expectedState string) {
-	_, updateErr := s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
+	now := time.Now().UTC()
+	params := repository.UpdateStateParams{
 		ExternalID:     externalID,
 		State:          expectedState,
 		SetActivityNow: true,
+	}
+	switch expectedState {
+	case lifecycle.StateRunning:
+		idleDeadline := now.Add(s.cfg.IdleStopTimeout)
+		params.IdleStopDeadlineAt = &idleDeadline
+	case lifecycle.StateStopped:
+		retentionDeadline := now.Add(s.cfg.StoppedRetentionTimeout)
+		params.RetentionPruneDeadlineAt = &retentionDeadline
+	}
+	_, updateErr := s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
+		ExternalID:               params.ExternalID,
+		State:                    params.State,
+		SetActivityNow:           params.SetActivityNow,
+		IdleStopDeadlineAt:       params.IdleStopDeadlineAt,
+		RetentionPruneDeadlineAt: params.RetentionPruneDeadlineAt,
 	}, expectedState)
 	if updateErr != nil && !errors.Is(updateErr, repository.ErrStateConflict) && !errors.Is(updateErr, repository.ErrNotFound) {
 		slog.WarnContext(ctx, "failed to persist file-operation activity timestamp", "external_id", externalID, "error", updateErr)

@@ -17,6 +17,7 @@ var (
 	ErrContainerNotFound = errors.New("container not found")
 	ErrStateConflict     = errors.New("container state conflict")
 	ErrProviderFailure   = errors.New("provider failure")
+	ErrCapacityExceeded  = errors.New("capacity exceeded")
 )
 
 type Service struct {
@@ -26,13 +27,19 @@ type Service struct {
 }
 
 type ContainerView struct {
-	ExternalID     string
-	State          string
-	Profile        string
-	ImageVersion   string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	LastActivityAt *time.Time
+	ExternalID               string
+	State                    string
+	Profile                  string
+	ImageVersion             string
+	CreatedAt                time.Time
+	UpdatedAt                time.Time
+	LastActivityAt           *time.Time
+	IdleStopDeadlineAt       *time.Time
+	RetentionPruneDeadlineAt *time.Time
+	StoppedAt                *time.Time
+	PruneRetryCount          int
+	NextPruneRetryAt         *time.Time
+	LastPruneError           *string
 }
 
 func NewService(repo repository.ContainerRepository, provider types.ContainerProvider, cfg config.Config) *Service {
@@ -44,19 +51,23 @@ func NewService(repo repository.ContainerRepository, provider types.ContainerPro
 }
 
 func (s *Service) CreateContainer(ctx context.Context) (*ContainerView, error) {
+	if err := s.ensureCapacityForCreate(ctx); err != nil {
+		return nil, err
+	}
+
 	runningCount, err := s.repo.CountByState(ctx, StateRunning)
 	if err != nil {
 		return nil, fmt.Errorf("count running containers: %w", err)
 	}
 	if s.cfg.RunningContainerLimit > 0 && runningCount >= s.cfg.RunningContainerLimit {
-		return nil, fmt.Errorf("%w: running container limit reached", ErrStateConflict)
+		return nil, fmt.Errorf("%w: running container limit reached", ErrCapacityExceeded)
 	}
 	totalCount, err := s.repo.CountTotal(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("count total containers: %w", err)
 	}
 	if s.cfg.TotalContainerLimit > 0 && totalCount >= s.cfg.TotalContainerLimit {
-		return nil, fmt.Errorf("%w: total container limit reached", ErrStateConflict)
+		return nil, fmt.Errorf("%w: total container limit reached", ErrCapacityExceeded)
 	}
 
 	externalID := uuid.NewString()
@@ -100,11 +111,19 @@ func (s *Service) CreateContainer(ctx context.Context) (*ContainerView, error) {
 	if err != nil {
 		return nil, err
 	}
+	now := time.Now().UTC()
+	idleDeadline := now.Add(s.cfg.IdleStopTimeout)
 	updated, err := s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
-		ExternalID:     externalID,
-		State:          next,
-		ProviderRef:    &providerContainer.ProviderRef,
-		SetActivityNow: true,
+		ExternalID:                  externalID,
+		State:                       next,
+		ProviderRef:                 &providerContainer.ProviderRef,
+		SetActivityNow:              true,
+		IdleStopDeadlineAt:          &idleDeadline,
+		ClearRetentionPruneDeadline: true,
+		ClearStoppedAt:              true,
+		PruneRetryCount:             intPtr(0),
+		ClearNextPruneRetryAt:       true,
+		ClearLastPruneError:         true,
 	}, row.State)
 	if err != nil {
 		if errors.Is(err, repository.ErrStateConflict) {
@@ -167,10 +186,15 @@ func (s *Service) StopContainer(ctx context.Context, externalID string) (*Contai
 	if err != nil {
 		return nil, err
 	}
+	now := time.Now().UTC()
+	retentionDeadline := now.Add(s.cfg.StoppedRetentionTimeout)
 	updated, err := s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
-		ExternalID:     row.ExternalID,
-		State:          stoppedState,
-		SetActivityNow: true,
+		ExternalID:               row.ExternalID,
+		State:                    stoppedState,
+		SetActivityNow:           true,
+		StoppedAt:                &now,
+		RetentionPruneDeadlineAt: &retentionDeadline,
+		ClearIdleStopDeadline:    true,
 	}, stoppingState)
 	if err != nil {
 		if errors.Is(err, repository.ErrStateConflict) {
@@ -182,6 +206,10 @@ func (s *Service) StopContainer(ctx context.Context, externalID string) (*Contai
 }
 
 func (s *Service) StartContainer(ctx context.Context, externalID string) (*ContainerView, error) {
+	if err := s.ensureCapacityForStart(ctx); err != nil {
+		return nil, err
+	}
+
 	row, err := s.repo.GetByExternalID(ctx, externalID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
@@ -221,10 +249,18 @@ func (s *Service) StartContainer(ctx context.Context, externalID string) (*Conta
 	if err != nil {
 		return nil, err
 	}
+	now := time.Now().UTC()
+	idleDeadline := now.Add(s.cfg.IdleStopTimeout)
 	updated, err := s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
-		ExternalID:     row.ExternalID,
-		State:          runningState,
-		SetActivityNow: true,
+		ExternalID:                  row.ExternalID,
+		State:                       runningState,
+		SetActivityNow:              true,
+		IdleStopDeadlineAt:          &idleDeadline,
+		ClearRetentionPruneDeadline: true,
+		ClearStoppedAt:              true,
+		PruneRetryCount:             intPtr(0),
+		ClearNextPruneRetryAt:       true,
+		ClearLastPruneError:         true,
 	}, startingState)
 	if err != nil {
 		if errors.Is(err, repository.ErrStateConflict) {
@@ -263,9 +299,15 @@ func (s *Service) PruneContainer(ctx context.Context, externalID string) (*Conta
 
 	if err := s.provider.PruneSandbox(ctx, *row.ProviderRef); err != nil {
 		if failedState, stateErr := NextState(pruningState, TransitionPruneFailed); stateErr == nil {
+			nextRetryAt := time.Now().UTC().Add(backoffForRetry(row.PruneRetryCount))
+			retryCount := row.PruneRetryCount + 1
+			lastErr := err.Error()
 			_, _ = s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
-				ExternalID: row.ExternalID,
-				State:      failedState,
+				ExternalID:       row.ExternalID,
+				State:            failedState,
+				PruneRetryCount:  &retryCount,
+				NextPruneRetryAt: &nextRetryAt,
+				LastPruneError:   &lastErr,
 			}, pruningState)
 		}
 		return nil, fmt.Errorf("%w: prune sandbox: %w", ErrProviderFailure, err)
@@ -276,9 +318,15 @@ func (s *Service) PruneContainer(ctx context.Context, externalID string) (*Conta
 		return nil, err
 	}
 	updated, err := s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
-		ExternalID:     row.ExternalID,
-		State:          prunedState,
-		SetActivityNow: true,
+		ExternalID:                  row.ExternalID,
+		State:                       prunedState,
+		SetActivityNow:              true,
+		ClearIdleStopDeadline:       true,
+		ClearRetentionPruneDeadline: true,
+		ClearStoppedAt:              true,
+		PruneRetryCount:             intPtr(0),
+		ClearNextPruneRetryAt:       true,
+		ClearLastPruneError:         true,
 	}, pruningState)
 	if err != nil {
 		if errors.Is(err, repository.ErrStateConflict) {
@@ -291,12 +339,106 @@ func (s *Service) PruneContainer(ctx context.Context, externalID string) (*Conta
 
 func mapContainer(c *repository.Container) *ContainerView {
 	return &ContainerView{
-		ExternalID:     c.ExternalID,
-		State:          c.State,
-		Profile:        c.Profile,
-		ImageVersion:   c.ImageVersion,
-		CreatedAt:      c.CreatedAt,
-		UpdatedAt:      c.UpdatedAt,
-		LastActivityAt: c.LastActivityAt,
+		ExternalID:               c.ExternalID,
+		State:                    c.State,
+		Profile:                  c.Profile,
+		ImageVersion:             c.ImageVersion,
+		CreatedAt:                c.CreatedAt,
+		UpdatedAt:                c.UpdatedAt,
+		LastActivityAt:           c.LastActivityAt,
+		IdleStopDeadlineAt:       c.IdleStopDeadlineAt,
+		RetentionPruneDeadlineAt: c.RetentionPruneDeadlineAt,
+		StoppedAt:                c.StoppedAt,
+		PruneRetryCount:          c.PruneRetryCount,
+		NextPruneRetryAt:         c.NextPruneRetryAt,
+		LastPruneError:           c.LastPruneError,
 	}
+}
+
+func backoffForRetry(currentRetryCount int) time.Duration {
+	backoff := time.Duration(currentRetryCount+1) * time.Minute
+	if backoff > 30*time.Minute {
+		return 30 * time.Minute
+	}
+	return backoff
+}
+
+func intPtr(v int) *int {
+	return &v
+}
+
+func (s *Service) ensureCapacityForCreate(ctx context.Context) error {
+	if s.cfg.RunningContainerLimit <= 0 && s.cfg.TotalContainerLimit <= 0 {
+		return nil
+	}
+
+	runningCount, err := s.repo.CountByState(ctx, StateRunning)
+	if err != nil {
+		return fmt.Errorf("count running containers: %w", err)
+	}
+	totalCount, err := s.repo.CountTotal(ctx)
+	if err != nil {
+		return fmt.Errorf("count total containers: %w", err)
+	}
+
+	if s.cfg.TotalContainerLimit > 0 && totalCount >= s.cfg.TotalContainerLimit {
+		if reclaimed := s.reclaimOneForTotal(ctx); !reclaimed {
+			return fmt.Errorf("%w: total container limit reached", ErrCapacityExceeded)
+		}
+	}
+	if s.cfg.RunningContainerLimit > 0 && runningCount >= s.cfg.RunningContainerLimit {
+		if reclaimed := s.reclaimOneForRunning(ctx); !reclaimed {
+			return fmt.Errorf("%w: running container limit reached", ErrCapacityExceeded)
+		}
+	}
+	return nil
+}
+
+func (s *Service) ensureCapacityForStart(ctx context.Context) error {
+	if s.cfg.RunningContainerLimit <= 0 {
+		return nil
+	}
+	runningCount, err := s.repo.CountByState(ctx, StateRunning)
+	if err != nil {
+		return fmt.Errorf("count running containers: %w", err)
+	}
+	if runningCount < s.cfg.RunningContainerLimit {
+		return nil
+	}
+	if reclaimed := s.reclaimOneForRunning(ctx); !reclaimed {
+		return fmt.Errorf("%w: running container limit reached", ErrCapacityExceeded)
+	}
+	return nil
+}
+
+func (s *Service) reclaimOneForTotal(ctx context.Context) bool {
+	if rows, err := s.repo.FindExpiredStoppedRetention(ctx, time.Now().UTC(), 1); err == nil && len(rows) > 0 {
+		_, pruneErr := s.PruneContainer(ctx, rows[0].ExternalID)
+		return pruneErr == nil
+	}
+	if rows, err := s.repo.FindLongestIdleStopped(ctx, 1); err == nil && len(rows) > 0 {
+		_, pruneErr := s.PruneContainer(ctx, rows[0].ExternalID)
+		return pruneErr == nil
+	}
+	if rows, err := s.repo.FindExpiredRunningIdle(ctx, time.Now().UTC(), 1); err == nil && len(rows) > 0 {
+		_, pruneErr := s.PruneContainer(ctx, rows[0].ExternalID)
+		return pruneErr == nil
+	}
+	if rows, err := s.repo.FindLongestIdleRunningNoExec(ctx, 1); err == nil && len(rows) > 0 {
+		_, pruneErr := s.PruneContainer(ctx, rows[0].ExternalID)
+		return pruneErr == nil
+	}
+	return false
+}
+
+func (s *Service) reclaimOneForRunning(ctx context.Context) bool {
+	if rows, err := s.repo.FindExpiredRunningIdle(ctx, time.Now().UTC(), 1); err == nil && len(rows) > 0 {
+		_, stopErr := s.StopContainer(ctx, rows[0].ExternalID)
+		return stopErr == nil
+	}
+	if rows, err := s.repo.FindLongestIdleRunningNoExec(ctx, 1); err == nil && len(rows) > 0 {
+		_, stopErr := s.StopContainer(ctx, rows[0].ExternalID)
+		return stopErr == nil
+	}
+	return false
 }

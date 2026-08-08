@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/Blue-Door-Software-Group/containers4agents/ent/containermetadata"
+	"github.com/Blue-Door-Software-Group/containers4agents/ent/idempotencyrecord"
 )
 
 // ent aliases to avoid import conflicts in user's code.
@@ -74,6 +75,7 @@ func checkColumn(t, c string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
 			containermetadata.Table: containermetadata.ValidColumn,
+			idempotencyrecord.Table: idempotencyrecord.ValidColumn,
 		})
 	})
 	return columnCheck(t, c)

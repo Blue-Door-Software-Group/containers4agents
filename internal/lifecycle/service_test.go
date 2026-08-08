@@ -66,6 +66,39 @@ func (f fakeRepo) CountExecutionInProgress(ctx context.Context) (int, error) {
 	}
 	return f.countExecFn(ctx)
 }
+func (f fakeRepo) FindLongestIdleStopped(context.Context, int) ([]*repository.Container, error) {
+	return nil, nil
+}
+func (f fakeRepo) FindExpiredRunningIdle(context.Context, time.Time, int) ([]*repository.Container, error) {
+	return nil, nil
+}
+func (f fakeRepo) FindExpiredStoppedRetention(context.Context, time.Time, int) ([]*repository.Container, error) {
+	return nil, nil
+}
+func (f fakeRepo) FindLongestIdleRunningNoExec(context.Context, int) ([]*repository.Container, error) {
+	return nil, nil
+}
+func (f fakeRepo) FindPruneRetryDue(context.Context, time.Time, int) ([]*repository.Container, error) {
+	return nil, nil
+}
+func (f fakeRepo) ListNonTerminal(context.Context, int) ([]*repository.Container, error) {
+	return nil, nil
+}
+func (f fakeRepo) BackfillLifecycleDeadlines(context.Context, time.Time, time.Duration, time.Duration, int) (int, error) {
+	return 0, nil
+}
+func (f fakeRepo) GetIdempotencyRecord(context.Context, string, string, string) (*repository.IdempotencyRecord, error) {
+	return nil, repository.ErrNotFound
+}
+func (f fakeRepo) CreateIdempotencyRecord(context.Context, repository.IdempotencyRecord) (*repository.IdempotencyRecord, error) {
+	return nil, nil
+}
+func (f fakeRepo) UpdateIdempotencyRecordResult(context.Context, string, string, string, string, int, string) (*repository.IdempotencyRecord, error) {
+	return nil, nil
+}
+func (f fakeRepo) DeleteExpiredIdempotencyRecords(context.Context, time.Time) (int, error) {
+	return 0, nil
+}
 
 type fakeProvider struct {
 	createErr error
@@ -189,8 +222,8 @@ func TestCreateContainerRejectsRunningLimit(t *testing.T) {
 		TotalContainerLimit:   100,
 	})
 	_, err := svc.CreateContainer(context.Background())
-	if err == nil || !errors.Is(err, ErrStateConflict) {
-		t.Fatalf("expected state conflict, got %v", err)
+	if err == nil || !errors.Is(err, ErrCapacityExceeded) {
+		t.Fatalf("expected capacity exceeded, got %v", err)
 	}
 }
 
@@ -213,7 +246,7 @@ func TestCreateContainerRejectsTotalLimit(t *testing.T) {
 		TotalContainerLimit:   100,
 	})
 	_, err := svc.CreateContainer(context.Background())
-	if err == nil || !errors.Is(err, ErrStateConflict) {
-		t.Fatalf("expected state conflict, got %v", err)
+	if err == nil || !errors.Is(err, ErrCapacityExceeded) {
+		t.Fatalf("expected capacity exceeded, got %v", err)
 	}
 }

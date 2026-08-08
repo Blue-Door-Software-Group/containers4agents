@@ -95,6 +95,36 @@ func LastActivityAt(v time.Time) predicate.ContainerMetadata {
 	return predicate.ContainerMetadata(sql.FieldEQ(FieldLastActivityAt, v))
 }
 
+// IdleStopDeadlineAt applies equality check predicate on the "idle_stop_deadline_at" field. It's identical to IdleStopDeadlineAtEQ.
+func IdleStopDeadlineAt(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEQ(FieldIdleStopDeadlineAt, v))
+}
+
+// RetentionPruneDeadlineAt applies equality check predicate on the "retention_prune_deadline_at" field. It's identical to RetentionPruneDeadlineAtEQ.
+func RetentionPruneDeadlineAt(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEQ(FieldRetentionPruneDeadlineAt, v))
+}
+
+// StoppedAt applies equality check predicate on the "stopped_at" field. It's identical to StoppedAtEQ.
+func StoppedAt(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEQ(FieldStoppedAt, v))
+}
+
+// PruneRetryCount applies equality check predicate on the "prune_retry_count" field. It's identical to PruneRetryCountEQ.
+func PruneRetryCount(v int) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEQ(FieldPruneRetryCount, v))
+}
+
+// NextPruneRetryAt applies equality check predicate on the "next_prune_retry_at" field. It's identical to NextPruneRetryAtEQ.
+func NextPruneRetryAt(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEQ(FieldNextPruneRetryAt, v))
+}
+
+// LastPruneError applies equality check predicate on the "last_prune_error" field. It's identical to LastPruneErrorEQ.
+func LastPruneError(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEQ(FieldLastPruneError, v))
+}
+
 // ExecInProgress applies equality check predicate on the "exec_in_progress" field. It's identical to ExecInProgressEQ.
 func ExecInProgress(v bool) predicate.ContainerMetadata {
 	return predicate.ContainerMetadata(sql.FieldEQ(FieldExecInProgress, v))
@@ -563,6 +593,321 @@ func LastActivityAtIsNil() predicate.ContainerMetadata {
 // LastActivityAtNotNil applies the NotNil predicate on the "last_activity_at" field.
 func LastActivityAtNotNil() predicate.ContainerMetadata {
 	return predicate.ContainerMetadata(sql.FieldNotNull(FieldLastActivityAt))
+}
+
+// IdleStopDeadlineAtEQ applies the EQ predicate on the "idle_stop_deadline_at" field.
+func IdleStopDeadlineAtEQ(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEQ(FieldIdleStopDeadlineAt, v))
+}
+
+// IdleStopDeadlineAtNEQ applies the NEQ predicate on the "idle_stop_deadline_at" field.
+func IdleStopDeadlineAtNEQ(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNEQ(FieldIdleStopDeadlineAt, v))
+}
+
+// IdleStopDeadlineAtIn applies the In predicate on the "idle_stop_deadline_at" field.
+func IdleStopDeadlineAtIn(vs ...time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldIn(FieldIdleStopDeadlineAt, vs...))
+}
+
+// IdleStopDeadlineAtNotIn applies the NotIn predicate on the "idle_stop_deadline_at" field.
+func IdleStopDeadlineAtNotIn(vs ...time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNotIn(FieldIdleStopDeadlineAt, vs...))
+}
+
+// IdleStopDeadlineAtGT applies the GT predicate on the "idle_stop_deadline_at" field.
+func IdleStopDeadlineAtGT(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldGT(FieldIdleStopDeadlineAt, v))
+}
+
+// IdleStopDeadlineAtGTE applies the GTE predicate on the "idle_stop_deadline_at" field.
+func IdleStopDeadlineAtGTE(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldGTE(FieldIdleStopDeadlineAt, v))
+}
+
+// IdleStopDeadlineAtLT applies the LT predicate on the "idle_stop_deadline_at" field.
+func IdleStopDeadlineAtLT(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldLT(FieldIdleStopDeadlineAt, v))
+}
+
+// IdleStopDeadlineAtLTE applies the LTE predicate on the "idle_stop_deadline_at" field.
+func IdleStopDeadlineAtLTE(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldLTE(FieldIdleStopDeadlineAt, v))
+}
+
+// IdleStopDeadlineAtIsNil applies the IsNil predicate on the "idle_stop_deadline_at" field.
+func IdleStopDeadlineAtIsNil() predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldIsNull(FieldIdleStopDeadlineAt))
+}
+
+// IdleStopDeadlineAtNotNil applies the NotNil predicate on the "idle_stop_deadline_at" field.
+func IdleStopDeadlineAtNotNil() predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNotNull(FieldIdleStopDeadlineAt))
+}
+
+// RetentionPruneDeadlineAtEQ applies the EQ predicate on the "retention_prune_deadline_at" field.
+func RetentionPruneDeadlineAtEQ(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEQ(FieldRetentionPruneDeadlineAt, v))
+}
+
+// RetentionPruneDeadlineAtNEQ applies the NEQ predicate on the "retention_prune_deadline_at" field.
+func RetentionPruneDeadlineAtNEQ(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNEQ(FieldRetentionPruneDeadlineAt, v))
+}
+
+// RetentionPruneDeadlineAtIn applies the In predicate on the "retention_prune_deadline_at" field.
+func RetentionPruneDeadlineAtIn(vs ...time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldIn(FieldRetentionPruneDeadlineAt, vs...))
+}
+
+// RetentionPruneDeadlineAtNotIn applies the NotIn predicate on the "retention_prune_deadline_at" field.
+func RetentionPruneDeadlineAtNotIn(vs ...time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNotIn(FieldRetentionPruneDeadlineAt, vs...))
+}
+
+// RetentionPruneDeadlineAtGT applies the GT predicate on the "retention_prune_deadline_at" field.
+func RetentionPruneDeadlineAtGT(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldGT(FieldRetentionPruneDeadlineAt, v))
+}
+
+// RetentionPruneDeadlineAtGTE applies the GTE predicate on the "retention_prune_deadline_at" field.
+func RetentionPruneDeadlineAtGTE(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldGTE(FieldRetentionPruneDeadlineAt, v))
+}
+
+// RetentionPruneDeadlineAtLT applies the LT predicate on the "retention_prune_deadline_at" field.
+func RetentionPruneDeadlineAtLT(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldLT(FieldRetentionPruneDeadlineAt, v))
+}
+
+// RetentionPruneDeadlineAtLTE applies the LTE predicate on the "retention_prune_deadline_at" field.
+func RetentionPruneDeadlineAtLTE(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldLTE(FieldRetentionPruneDeadlineAt, v))
+}
+
+// RetentionPruneDeadlineAtIsNil applies the IsNil predicate on the "retention_prune_deadline_at" field.
+func RetentionPruneDeadlineAtIsNil() predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldIsNull(FieldRetentionPruneDeadlineAt))
+}
+
+// RetentionPruneDeadlineAtNotNil applies the NotNil predicate on the "retention_prune_deadline_at" field.
+func RetentionPruneDeadlineAtNotNil() predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNotNull(FieldRetentionPruneDeadlineAt))
+}
+
+// StoppedAtEQ applies the EQ predicate on the "stopped_at" field.
+func StoppedAtEQ(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEQ(FieldStoppedAt, v))
+}
+
+// StoppedAtNEQ applies the NEQ predicate on the "stopped_at" field.
+func StoppedAtNEQ(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNEQ(FieldStoppedAt, v))
+}
+
+// StoppedAtIn applies the In predicate on the "stopped_at" field.
+func StoppedAtIn(vs ...time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldIn(FieldStoppedAt, vs...))
+}
+
+// StoppedAtNotIn applies the NotIn predicate on the "stopped_at" field.
+func StoppedAtNotIn(vs ...time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNotIn(FieldStoppedAt, vs...))
+}
+
+// StoppedAtGT applies the GT predicate on the "stopped_at" field.
+func StoppedAtGT(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldGT(FieldStoppedAt, v))
+}
+
+// StoppedAtGTE applies the GTE predicate on the "stopped_at" field.
+func StoppedAtGTE(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldGTE(FieldStoppedAt, v))
+}
+
+// StoppedAtLT applies the LT predicate on the "stopped_at" field.
+func StoppedAtLT(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldLT(FieldStoppedAt, v))
+}
+
+// StoppedAtLTE applies the LTE predicate on the "stopped_at" field.
+func StoppedAtLTE(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldLTE(FieldStoppedAt, v))
+}
+
+// StoppedAtIsNil applies the IsNil predicate on the "stopped_at" field.
+func StoppedAtIsNil() predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldIsNull(FieldStoppedAt))
+}
+
+// StoppedAtNotNil applies the NotNil predicate on the "stopped_at" field.
+func StoppedAtNotNil() predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNotNull(FieldStoppedAt))
+}
+
+// PruneRetryCountEQ applies the EQ predicate on the "prune_retry_count" field.
+func PruneRetryCountEQ(v int) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEQ(FieldPruneRetryCount, v))
+}
+
+// PruneRetryCountNEQ applies the NEQ predicate on the "prune_retry_count" field.
+func PruneRetryCountNEQ(v int) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNEQ(FieldPruneRetryCount, v))
+}
+
+// PruneRetryCountIn applies the In predicate on the "prune_retry_count" field.
+func PruneRetryCountIn(vs ...int) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldIn(FieldPruneRetryCount, vs...))
+}
+
+// PruneRetryCountNotIn applies the NotIn predicate on the "prune_retry_count" field.
+func PruneRetryCountNotIn(vs ...int) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNotIn(FieldPruneRetryCount, vs...))
+}
+
+// PruneRetryCountGT applies the GT predicate on the "prune_retry_count" field.
+func PruneRetryCountGT(v int) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldGT(FieldPruneRetryCount, v))
+}
+
+// PruneRetryCountGTE applies the GTE predicate on the "prune_retry_count" field.
+func PruneRetryCountGTE(v int) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldGTE(FieldPruneRetryCount, v))
+}
+
+// PruneRetryCountLT applies the LT predicate on the "prune_retry_count" field.
+func PruneRetryCountLT(v int) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldLT(FieldPruneRetryCount, v))
+}
+
+// PruneRetryCountLTE applies the LTE predicate on the "prune_retry_count" field.
+func PruneRetryCountLTE(v int) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldLTE(FieldPruneRetryCount, v))
+}
+
+// NextPruneRetryAtEQ applies the EQ predicate on the "next_prune_retry_at" field.
+func NextPruneRetryAtEQ(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEQ(FieldNextPruneRetryAt, v))
+}
+
+// NextPruneRetryAtNEQ applies the NEQ predicate on the "next_prune_retry_at" field.
+func NextPruneRetryAtNEQ(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNEQ(FieldNextPruneRetryAt, v))
+}
+
+// NextPruneRetryAtIn applies the In predicate on the "next_prune_retry_at" field.
+func NextPruneRetryAtIn(vs ...time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldIn(FieldNextPruneRetryAt, vs...))
+}
+
+// NextPruneRetryAtNotIn applies the NotIn predicate on the "next_prune_retry_at" field.
+func NextPruneRetryAtNotIn(vs ...time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNotIn(FieldNextPruneRetryAt, vs...))
+}
+
+// NextPruneRetryAtGT applies the GT predicate on the "next_prune_retry_at" field.
+func NextPruneRetryAtGT(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldGT(FieldNextPruneRetryAt, v))
+}
+
+// NextPruneRetryAtGTE applies the GTE predicate on the "next_prune_retry_at" field.
+func NextPruneRetryAtGTE(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldGTE(FieldNextPruneRetryAt, v))
+}
+
+// NextPruneRetryAtLT applies the LT predicate on the "next_prune_retry_at" field.
+func NextPruneRetryAtLT(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldLT(FieldNextPruneRetryAt, v))
+}
+
+// NextPruneRetryAtLTE applies the LTE predicate on the "next_prune_retry_at" field.
+func NextPruneRetryAtLTE(v time.Time) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldLTE(FieldNextPruneRetryAt, v))
+}
+
+// NextPruneRetryAtIsNil applies the IsNil predicate on the "next_prune_retry_at" field.
+func NextPruneRetryAtIsNil() predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldIsNull(FieldNextPruneRetryAt))
+}
+
+// NextPruneRetryAtNotNil applies the NotNil predicate on the "next_prune_retry_at" field.
+func NextPruneRetryAtNotNil() predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNotNull(FieldNextPruneRetryAt))
+}
+
+// LastPruneErrorEQ applies the EQ predicate on the "last_prune_error" field.
+func LastPruneErrorEQ(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEQ(FieldLastPruneError, v))
+}
+
+// LastPruneErrorNEQ applies the NEQ predicate on the "last_prune_error" field.
+func LastPruneErrorNEQ(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNEQ(FieldLastPruneError, v))
+}
+
+// LastPruneErrorIn applies the In predicate on the "last_prune_error" field.
+func LastPruneErrorIn(vs ...string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldIn(FieldLastPruneError, vs...))
+}
+
+// LastPruneErrorNotIn applies the NotIn predicate on the "last_prune_error" field.
+func LastPruneErrorNotIn(vs ...string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNotIn(FieldLastPruneError, vs...))
+}
+
+// LastPruneErrorGT applies the GT predicate on the "last_prune_error" field.
+func LastPruneErrorGT(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldGT(FieldLastPruneError, v))
+}
+
+// LastPruneErrorGTE applies the GTE predicate on the "last_prune_error" field.
+func LastPruneErrorGTE(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldGTE(FieldLastPruneError, v))
+}
+
+// LastPruneErrorLT applies the LT predicate on the "last_prune_error" field.
+func LastPruneErrorLT(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldLT(FieldLastPruneError, v))
+}
+
+// LastPruneErrorLTE applies the LTE predicate on the "last_prune_error" field.
+func LastPruneErrorLTE(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldLTE(FieldLastPruneError, v))
+}
+
+// LastPruneErrorContains applies the Contains predicate on the "last_prune_error" field.
+func LastPruneErrorContains(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldContains(FieldLastPruneError, v))
+}
+
+// LastPruneErrorHasPrefix applies the HasPrefix predicate on the "last_prune_error" field.
+func LastPruneErrorHasPrefix(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldHasPrefix(FieldLastPruneError, v))
+}
+
+// LastPruneErrorHasSuffix applies the HasSuffix predicate on the "last_prune_error" field.
+func LastPruneErrorHasSuffix(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldHasSuffix(FieldLastPruneError, v))
+}
+
+// LastPruneErrorIsNil applies the IsNil predicate on the "last_prune_error" field.
+func LastPruneErrorIsNil() predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldIsNull(FieldLastPruneError))
+}
+
+// LastPruneErrorNotNil applies the NotNil predicate on the "last_prune_error" field.
+func LastPruneErrorNotNil() predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNotNull(FieldLastPruneError))
+}
+
+// LastPruneErrorEqualFold applies the EqualFold predicate on the "last_prune_error" field.
+func LastPruneErrorEqualFold(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEqualFold(FieldLastPruneError, v))
+}
+
+// LastPruneErrorContainsFold applies the ContainsFold predicate on the "last_prune_error" field.
+func LastPruneErrorContainsFold(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldContainsFold(FieldLastPruneError, v))
 }
 
 // ExecInProgressEQ applies the EQ predicate on the "exec_in_progress" field.

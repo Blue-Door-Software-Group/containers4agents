@@ -70,11 +70,29 @@ func Conflict(message string) APIError {
 	}
 }
 
+func IdempotencyConflict(message string) APIError {
+	return APIError{
+		Code:      "idempotency_conflict",
+		Message:   message,
+		Status:    http.StatusConflict,
+		Retryable: false,
+	}
+}
+
 func BadRequest(message string) APIError {
 	return APIError{
 		Code:      "bad_request",
 		Message:   message,
 		Status:    http.StatusBadRequest,
+		Retryable: false,
+	}
+}
+
+func UnprocessableEntity(message string) APIError {
+	return APIError{
+		Code:      "validation_error",
+		Message:   message,
+		Status:    http.StatusUnprocessableEntity,
 		Retryable: false,
 	}
 }
@@ -94,5 +112,14 @@ func PayloadTooLarge(message string) APIError {
 		Message:   message,
 		Status:    http.StatusRequestEntityTooLarge,
 		Retryable: false,
+	}
+}
+
+func CapacityExceeded(message string) APIError {
+	return APIError{
+		Code:      "capacity_exceeded",
+		Message:   message,
+		Status:    http.StatusTooManyRequests,
+		Retryable: true,
 	}
 }

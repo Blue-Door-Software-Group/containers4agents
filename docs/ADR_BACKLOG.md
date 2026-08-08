@@ -54,6 +54,8 @@ Support idempotency keys for create, start/resume, stop, prune, and file upload 
 
 - Use operation-scoped keys and bounded retention window.
 - Store request hash with operation result metadata.
+- v1 implementation stores key records in Postgres via Ent and enforces hash match (`same key + different payload` => conflict).
+- Replayed responses return the persisted status/body for create/stop/start/prune/upload operations.
 
 ## ADR-004 Execution concurrency per container
 
@@ -147,3 +149,5 @@ Persist lifecycle deadlines in metadata store and run reconciliation as first-cl
 ### Notes
 
 - Keep reconciliation idempotent and instrumented (drift corrected, retries, failures).
+- v1 clustering model uses Postgres advisory-lock leader election for reconcile worker singleton behavior across API replicas.
+- Deadlines (`idle stop`, `stopped retention`) and prune-retry metadata are persisted in `container_metadata` so restart and failover are safe.

@@ -14,6 +14,8 @@ type Tx struct {
 	config
 	// ContainerMetadata is the client for interacting with the ContainerMetadata builders.
 	ContainerMetadata *ContainerMetadataClient
+	// IdempotencyRecord is the client for interacting with the IdempotencyRecord builders.
+	IdempotencyRecord *IdempotencyRecordClient
 
 	// lazily loaded.
 	client     *Client
@@ -146,6 +148,7 @@ func (tx *Tx) Client() *Client {
 
 func (tx *Tx) init() {
 	tx.ContainerMetadata = NewContainerMetadataClient(tx.config)
+	tx.IdempotencyRecord = NewIdempotencyRecordClient(tx.config)
 }
 
 // txDriver wraps the given dialect.Tx with a nop dialect.Driver implementation.

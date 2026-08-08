@@ -8,3 +8,6 @@ import (
 
 // ContainerMetadata is the predicate function for containermetadata builders.
 type ContainerMetadata func(*sql.Selector)
+
+// IdempotencyRecord is the predicate function for idempotencyrecord builders.
+type IdempotencyRecord func(*sql.Selector)

@@ -34,6 +34,18 @@ type ContainerMetadata struct {
 	ProviderRef *string `json:"provider_ref,omitempty"`
 	// LastActivityAt holds the value of the "last_activity_at" field.
 	LastActivityAt *time.Time `json:"last_activity_at,omitempty"`
+	// IdleStopDeadlineAt holds the value of the "idle_stop_deadline_at" field.
+	IdleStopDeadlineAt *time.Time `json:"idle_stop_deadline_at,omitempty"`
+	// RetentionPruneDeadlineAt holds the value of the "retention_prune_deadline_at" field.
+	RetentionPruneDeadlineAt *time.Time `json:"retention_prune_deadline_at,omitempty"`
+	// StoppedAt holds the value of the "stopped_at" field.
+	StoppedAt *time.Time `json:"stopped_at,omitempty"`
+	// PruneRetryCount holds the value of the "prune_retry_count" field.
+	PruneRetryCount int `json:"prune_retry_count,omitempty"`
+	// NextPruneRetryAt holds the value of the "next_prune_retry_at" field.
+	NextPruneRetryAt *time.Time `json:"next_prune_retry_at,omitempty"`
+	// LastPruneError holds the value of the "last_prune_error" field.
+	LastPruneError *string `json:"last_prune_error,omitempty"`
 	// ExecInProgress holds the value of the "exec_in_progress" field.
 	ExecInProgress bool `json:"exec_in_progress,omitempty"`
 	selectValues   sql.SelectValues
@@ -46,9 +58,11 @@ func (*ContainerMetadata) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case containermetadata.FieldExecInProgress:
 			values[i] = new(sql.NullBool)
-		case containermetadata.FieldExternalID, containermetadata.FieldState, containermetadata.FieldProfile, containermetadata.FieldImageVersion, containermetadata.FieldProviderRef:
+		case containermetadata.FieldPruneRetryCount:
+			values[i] = new(sql.NullInt64)
+		case containermetadata.FieldExternalID, containermetadata.FieldState, containermetadata.FieldProfile, containermetadata.FieldImageVersion, containermetadata.FieldProviderRef, containermetadata.FieldLastPruneError:
 			values[i] = new(sql.NullString)
-		case containermetadata.FieldCreatedAt, containermetadata.FieldUpdatedAt, containermetadata.FieldLastActivityAt:
+		case containermetadata.FieldCreatedAt, containermetadata.FieldUpdatedAt, containermetadata.FieldLastActivityAt, containermetadata.FieldIdleStopDeadlineAt, containermetadata.FieldRetentionPruneDeadlineAt, containermetadata.FieldStoppedAt, containermetadata.FieldNextPruneRetryAt:
 			values[i] = new(sql.NullTime)
 		case containermetadata.FieldID:
 			values[i] = new(uuid.UUID)
@@ -123,6 +137,47 @@ func (_m *ContainerMetadata) assignValues(columns []string, values []any) error 
 				_m.LastActivityAt = new(time.Time)
 				*_m.LastActivityAt = value.Time
 			}
+		case containermetadata.FieldIdleStopDeadlineAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field idle_stop_deadline_at", values[i])
+			} else if value.Valid {
+				_m.IdleStopDeadlineAt = new(time.Time)
+				*_m.IdleStopDeadlineAt = value.Time
+			}
+		case containermetadata.FieldRetentionPruneDeadlineAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field retention_prune_deadline_at", values[i])
+			} else if value.Valid {
+				_m.RetentionPruneDeadlineAt = new(time.Time)
+				*_m.RetentionPruneDeadlineAt = value.Time
+			}
+		case containermetadata.FieldStoppedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field stopped_at", values[i])
+			} else if value.Valid {
+				_m.StoppedAt = new(time.Time)
+				*_m.StoppedAt = value.Time
+			}
+		case containermetadata.FieldPruneRetryCount:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field prune_retry_count", values[i])
+			} else if value.Valid {
+				_m.PruneRetryCount = int(value.Int64)
+			}
+		case containermetadata.FieldNextPruneRetryAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field next_prune_retry_at", values[i])
+			} else if value.Valid {
+				_m.NextPruneRetryAt = new(time.Time)
+				*_m.NextPruneRetryAt = value.Time
+			}
+		case containermetadata.FieldLastPruneError:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field last_prune_error", values[i])
+			} else if value.Valid {
+				_m.LastPruneError = new(string)
+				*_m.LastPruneError = value.String
+			}
 		case containermetadata.FieldExecInProgress:
 			if value, ok := values[i].(*sql.NullBool); !ok {
 				return fmt.Errorf("unexpected type %T for field exec_in_progress", values[i])
@@ -191,6 +246,34 @@ func (_m *ContainerMetadata) String() string {
 	if v := _m.LastActivityAt; v != nil {
 		builder.WriteString("last_activity_at=")
 		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.IdleStopDeadlineAt; v != nil {
+		builder.WriteString("idle_stop_deadline_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.RetentionPruneDeadlineAt; v != nil {
+		builder.WriteString("retention_prune_deadline_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.StoppedAt; v != nil {
+		builder.WriteString("stopped_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("prune_retry_count=")
+	builder.WriteString(fmt.Sprintf("%v", _m.PruneRetryCount))
+	builder.WriteString(", ")
+	if v := _m.NextPruneRetryAt; v != nil {
+		builder.WriteString("next_prune_retry_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.LastPruneError; v != nil {
+		builder.WriteString("last_prune_error=")
+		builder.WriteString(*v)
 	}
 	builder.WriteString(", ")
 	builder.WriteString("exec_in_progress=")

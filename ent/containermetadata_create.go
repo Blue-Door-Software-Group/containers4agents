@@ -109,6 +109,90 @@ func (_c *ContainerMetadataCreate) SetNillableLastActivityAt(v *time.Time) *Cont
 	return _c
 }
 
+// SetIdleStopDeadlineAt sets the "idle_stop_deadline_at" field.
+func (_c *ContainerMetadataCreate) SetIdleStopDeadlineAt(v time.Time) *ContainerMetadataCreate {
+	_c.mutation.SetIdleStopDeadlineAt(v)
+	return _c
+}
+
+// SetNillableIdleStopDeadlineAt sets the "idle_stop_deadline_at" field if the given value is not nil.
+func (_c *ContainerMetadataCreate) SetNillableIdleStopDeadlineAt(v *time.Time) *ContainerMetadataCreate {
+	if v != nil {
+		_c.SetIdleStopDeadlineAt(*v)
+	}
+	return _c
+}
+
+// SetRetentionPruneDeadlineAt sets the "retention_prune_deadline_at" field.
+func (_c *ContainerMetadataCreate) SetRetentionPruneDeadlineAt(v time.Time) *ContainerMetadataCreate {
+	_c.mutation.SetRetentionPruneDeadlineAt(v)
+	return _c
+}
+
+// SetNillableRetentionPruneDeadlineAt sets the "retention_prune_deadline_at" field if the given value is not nil.
+func (_c *ContainerMetadataCreate) SetNillableRetentionPruneDeadlineAt(v *time.Time) *ContainerMetadataCreate {
+	if v != nil {
+		_c.SetRetentionPruneDeadlineAt(*v)
+	}
+	return _c
+}
+
+// SetStoppedAt sets the "stopped_at" field.
+func (_c *ContainerMetadataCreate) SetStoppedAt(v time.Time) *ContainerMetadataCreate {
+	_c.mutation.SetStoppedAt(v)
+	return _c
+}
+
+// SetNillableStoppedAt sets the "stopped_at" field if the given value is not nil.
+func (_c *ContainerMetadataCreate) SetNillableStoppedAt(v *time.Time) *ContainerMetadataCreate {
+	if v != nil {
+		_c.SetStoppedAt(*v)
+	}
+	return _c
+}
+
+// SetPruneRetryCount sets the "prune_retry_count" field.
+func (_c *ContainerMetadataCreate) SetPruneRetryCount(v int) *ContainerMetadataCreate {
+	_c.mutation.SetPruneRetryCount(v)
+	return _c
+}
+
+// SetNillablePruneRetryCount sets the "prune_retry_count" field if the given value is not nil.
+func (_c *ContainerMetadataCreate) SetNillablePruneRetryCount(v *int) *ContainerMetadataCreate {
+	if v != nil {
+		_c.SetPruneRetryCount(*v)
+	}
+	return _c
+}
+
+// SetNextPruneRetryAt sets the "next_prune_retry_at" field.
+func (_c *ContainerMetadataCreate) SetNextPruneRetryAt(v time.Time) *ContainerMetadataCreate {
+	_c.mutation.SetNextPruneRetryAt(v)
+	return _c
+}
+
+// SetNillableNextPruneRetryAt sets the "next_prune_retry_at" field if the given value is not nil.
+func (_c *ContainerMetadataCreate) SetNillableNextPruneRetryAt(v *time.Time) *ContainerMetadataCreate {
+	if v != nil {
+		_c.SetNextPruneRetryAt(*v)
+	}
+	return _c
+}
+
+// SetLastPruneError sets the "last_prune_error" field.
+func (_c *ContainerMetadataCreate) SetLastPruneError(v string) *ContainerMetadataCreate {
+	_c.mutation.SetLastPruneError(v)
+	return _c
+}
+
+// SetNillableLastPruneError sets the "last_prune_error" field if the given value is not nil.
+func (_c *ContainerMetadataCreate) SetNillableLastPruneError(v *string) *ContainerMetadataCreate {
+	if v != nil {
+		_c.SetLastPruneError(*v)
+	}
+	return _c
+}
+
 // SetExecInProgress sets the "exec_in_progress" field.
 func (_c *ContainerMetadataCreate) SetExecInProgress(v bool) *ContainerMetadataCreate {
 	_c.mutation.SetExecInProgress(v)
@@ -184,6 +268,10 @@ func (_c *ContainerMetadataCreate) defaults() {
 		v := containermetadata.DefaultState
 		_c.mutation.SetState(v)
 	}
+	if _, ok := _c.mutation.PruneRetryCount(); !ok {
+		v := containermetadata.DefaultPruneRetryCount
+		_c.mutation.SetPruneRetryCount(v)
+	}
 	if _, ok := _c.mutation.ExecInProgress(); !ok {
 		v := containermetadata.DefaultExecInProgress
 		_c.mutation.SetExecInProgress(v)
@@ -228,6 +316,9 @@ func (_c *ContainerMetadataCreate) check() error {
 		if err := containermetadata.ImageVersionValidator(v); err != nil {
 			return &ValidationError{Name: "image_version", err: fmt.Errorf(`ent: validator failed for field "ContainerMetadata.image_version": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.PruneRetryCount(); !ok {
+		return &ValidationError{Name: "prune_retry_count", err: errors.New(`ent: missing required field "ContainerMetadata.prune_retry_count"`)}
 	}
 	if _, ok := _c.mutation.ExecInProgress(); !ok {
 		return &ValidationError{Name: "exec_in_progress", err: errors.New(`ent: missing required field "ContainerMetadata.exec_in_progress"`)}
@@ -298,6 +389,30 @@ func (_c *ContainerMetadataCreate) createSpec() (*ContainerMetadata, *sqlgraph.C
 	if value, ok := _c.mutation.LastActivityAt(); ok {
 		_spec.SetField(containermetadata.FieldLastActivityAt, field.TypeTime, value)
 		_node.LastActivityAt = &value
+	}
+	if value, ok := _c.mutation.IdleStopDeadlineAt(); ok {
+		_spec.SetField(containermetadata.FieldIdleStopDeadlineAt, field.TypeTime, value)
+		_node.IdleStopDeadlineAt = &value
+	}
+	if value, ok := _c.mutation.RetentionPruneDeadlineAt(); ok {
+		_spec.SetField(containermetadata.FieldRetentionPruneDeadlineAt, field.TypeTime, value)
+		_node.RetentionPruneDeadlineAt = &value
+	}
+	if value, ok := _c.mutation.StoppedAt(); ok {
+		_spec.SetField(containermetadata.FieldStoppedAt, field.TypeTime, value)
+		_node.StoppedAt = &value
+	}
+	if value, ok := _c.mutation.PruneRetryCount(); ok {
+		_spec.SetField(containermetadata.FieldPruneRetryCount, field.TypeInt, value)
+		_node.PruneRetryCount = value
+	}
+	if value, ok := _c.mutation.NextPruneRetryAt(); ok {
+		_spec.SetField(containermetadata.FieldNextPruneRetryAt, field.TypeTime, value)
+		_node.NextPruneRetryAt = &value
+	}
+	if value, ok := _c.mutation.LastPruneError(); ok {
+		_spec.SetField(containermetadata.FieldLastPruneError, field.TypeString, value)
+		_node.LastPruneError = &value
 	}
 	if value, ok := _c.mutation.ExecInProgress(); ok {
 		_spec.SetField(containermetadata.FieldExecInProgress, field.TypeBool, value)

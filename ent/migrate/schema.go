@@ -19,6 +19,12 @@ var (
 		{Name: "image_version", Type: field.TypeString},
 		{Name: "provider_ref", Type: field.TypeString, Nullable: true},
 		{Name: "last_activity_at", Type: field.TypeTime, Nullable: true},
+		{Name: "idle_stop_deadline_at", Type: field.TypeTime, Nullable: true},
+		{Name: "retention_prune_deadline_at", Type: field.TypeTime, Nullable: true},
+		{Name: "stopped_at", Type: field.TypeTime, Nullable: true},
+		{Name: "prune_retry_count", Type: field.TypeInt, Default: 0},
+		{Name: "next_prune_retry_at", Type: field.TypeTime, Nullable: true},
+		{Name: "last_prune_error", Type: field.TypeString, Nullable: true},
 		{Name: "exec_in_progress", Type: field.TypeBool, Default: false},
 	}
 	// ContainerMetadataTable holds the schema information for the "container_metadata" table.
@@ -40,12 +46,27 @@ var (
 			{
 				Name:    "containermetadata_exec_in_progress",
 				Unique:  false,
-				Columns: []*schema.Column{ContainerMetadataColumns[9]},
+				Columns: []*schema.Column{ContainerMetadataColumns[15]},
 			},
 			{
 				Name:    "containermetadata_last_activity_at",
 				Unique:  false,
 				Columns: []*schema.Column{ContainerMetadataColumns[8]},
+			},
+			{
+				Name:    "containermetadata_idle_stop_deadline_at",
+				Unique:  false,
+				Columns: []*schema.Column{ContainerMetadataColumns[9]},
+			},
+			{
+				Name:    "containermetadata_retention_prune_deadline_at",
+				Unique:  false,
+				Columns: []*schema.Column{ContainerMetadataColumns[10]},
+			},
+			{
+				Name:    "containermetadata_next_prune_retry_at",
+				Unique:  false,
+				Columns: []*schema.Column{ContainerMetadataColumns[13]},
 			},
 			{
 				Name:    "containermetadata_state_last_activity_at",
@@ -55,7 +76,22 @@ var (
 			{
 				Name:    "containermetadata_state_exec_in_progress",
 				Unique:  false,
+				Columns: []*schema.Column{ContainerMetadataColumns[4], ContainerMetadataColumns[15]},
+			},
+			{
+				Name:    "containermetadata_state_idle_stop_deadline_at",
+				Unique:  false,
 				Columns: []*schema.Column{ContainerMetadataColumns[4], ContainerMetadataColumns[9]},
+			},
+			{
+				Name:    "containermetadata_state_retention_prune_deadline_at",
+				Unique:  false,
+				Columns: []*schema.Column{ContainerMetadataColumns[4], ContainerMetadataColumns[10]},
+			},
+			{
+				Name:    "containermetadata_state_next_prune_retry_at",
+				Unique:  false,
+				Columns: []*schema.Column{ContainerMetadataColumns[4], ContainerMetadataColumns[13]},
 			},
 			{
 				Name:    "containermetadata_provider_ref",
@@ -64,9 +100,41 @@ var (
 			},
 		},
 	}
+	// IdempotencyRecordsColumns holds the columns for the "idempotency_records" table.
+	IdempotencyRecordsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "operation", Type: field.TypeString},
+		{Name: "scope", Type: field.TypeString},
+		{Name: "key", Type: field.TypeString},
+		{Name: "request_hash", Type: field.TypeString},
+		{Name: "status_code", Type: field.TypeInt, Default: 0},
+		{Name: "response_body", Type: field.TypeString, Nullable: true},
+		{Name: "expires_at", Type: field.TypeTime},
+	}
+	// IdempotencyRecordsTable holds the schema information for the "idempotency_records" table.
+	IdempotencyRecordsTable = &schema.Table{
+		Name:       "idempotency_records",
+		Columns:    IdempotencyRecordsColumns,
+		PrimaryKey: []*schema.Column{IdempotencyRecordsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "idempotencyrecord_operation_scope_key",
+				Unique:  true,
+				Columns: []*schema.Column{IdempotencyRecordsColumns[3], IdempotencyRecordsColumns[4], IdempotencyRecordsColumns[5]},
+			},
+			{
+				Name:    "idempotencyrecord_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{IdempotencyRecordsColumns[9]},
+			},
+		},
+	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
 		ContainerMetadataTable,
+		IdempotencyRecordsTable,
 	}
 )
 

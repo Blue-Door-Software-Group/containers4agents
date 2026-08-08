@@ -176,6 +176,12 @@ File operation semantics:
 3. Drift is resolved into canonical states (`failed`, `stopped`, `pruned`, etc.).
 4. Pending timer and deletion work queues are rebuilt from metadata.
 
+Reconciliation leadership semantics:
+
+- In multi-replica deployments, reconciliation uses Postgres advisory-lock leader election so only one active reconciler executes periodic deadline/retry scans at a time.
+- Followers remain passive and retry lock acquisition on interval.
+- Reconcile actions are idempotent and CAS-protected so leadership handoffs are safe.
+
 ## 5) State and Lifecycle Model
 
 Canonical lifecycle states:
@@ -306,6 +312,7 @@ flowchart LR
 - Startup reconciliation is mandatory after process restart.
 - Deletion failures enter retry queue with bounded backoff and observability.
 - Lifecycle and execution operations support safe retries and idempotent behavior where required.
+- Lifecycle timer authority is persisted in metadata (`idle_stop_deadline_at`, `retention_prune_deadline_at`) and enforced by reconciliation rather than in-memory timers.
 
 ### API behavior requirements
 

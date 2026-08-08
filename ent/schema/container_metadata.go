@@ -35,6 +35,23 @@ func (ContainerMetadata) Fields() []ent.Field {
 		field.Time("last_activity_at").
 			Optional().
 			Nillable(),
+		field.Time("idle_stop_deadline_at").
+			Optional().
+			Nillable(),
+		field.Time("retention_prune_deadline_at").
+			Optional().
+			Nillable(),
+		field.Time("stopped_at").
+			Optional().
+			Nillable(),
+		field.Int("prune_retry_count").
+			Default(0),
+		field.Time("next_prune_retry_at").
+			Optional().
+			Nillable(),
+		field.String("last_prune_error").
+			Optional().
+			Nillable(),
 		field.Bool("exec_in_progress").
 			Default(false),
 	}
@@ -52,8 +69,14 @@ func (ContainerMetadata) Indexes() []ent.Index {
 		index.Fields("state"),
 		index.Fields("exec_in_progress"),
 		index.Fields("last_activity_at"),
+		index.Fields("idle_stop_deadline_at"),
+		index.Fields("retention_prune_deadline_at"),
+		index.Fields("next_prune_retry_at"),
 		index.Fields("state", "last_activity_at"),
 		index.Fields("state", "exec_in_progress"),
+		index.Fields("state", "idle_stop_deadline_at"),
+		index.Fields("state", "retention_prune_deadline_at"),
+		index.Fields("state", "next_prune_retry_at"),
 		index.Fields("provider_ref"),
 	}
 }

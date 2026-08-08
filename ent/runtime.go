@@ -6,9 +6,21 @@ import (
 	"time"
 
 	"github.com/Blue-Door-Software-Group/containers4agents/ent/containermetadata"
+	"github.com/Blue-Door-Software-Group/containers4agents/ent/idempotencyrecord"
 	"github.com/Blue-Door-Software-Group/containers4agents/ent/schema"
 	"github.com/google/uuid"
 )
+
+func fallbackStringValidator(validators []any) func(string) error {
+	if len(validators) == 0 {
+		return func(string) error { return nil }
+	}
+	validator, ok := validators[0].(func(string) error)
+	if !ok || validator == nil {
+		return func(string) error { return nil }
+	}
+	return validator
+}
 
 // The init function reads all schema descriptors with runtime code
 // (default values, validators, hooks and policies) and stitches it
@@ -45,12 +57,55 @@ func init() {
 	containermetadataDescImageVersion := containermetadataFields[4].Descriptor()
 	// containermetadata.ImageVersionValidator is a validator for the "image_version" field. It is called by the builders before save.
 	containermetadata.ImageVersionValidator = containermetadataDescImageVersion.Validators[0].(func(string) error)
+	// containermetadataDescPruneRetryCount is the schema descriptor for prune_retry_count field.
+	containermetadataDescPruneRetryCount := containermetadataFields[10].Descriptor()
+	// containermetadata.DefaultPruneRetryCount holds the default value on creation for the prune_retry_count field.
+	containermetadata.DefaultPruneRetryCount = containermetadataDescPruneRetryCount.Default.(int)
 	// containermetadataDescExecInProgress is the schema descriptor for exec_in_progress field.
-	containermetadataDescExecInProgress := containermetadataFields[7].Descriptor()
+	containermetadataDescExecInProgress := containermetadataFields[13].Descriptor()
 	// containermetadata.DefaultExecInProgress holds the default value on creation for the exec_in_progress field.
 	containermetadata.DefaultExecInProgress = containermetadataDescExecInProgress.Default.(bool)
 	// containermetadataDescID is the schema descriptor for id field.
 	containermetadataDescID := containermetadataFields[0].Descriptor()
 	// containermetadata.DefaultID holds the default value on creation for the id field.
 	containermetadata.DefaultID = containermetadataDescID.Default.(func() uuid.UUID)
+	idempotencyrecordMixin := schema.IdempotencyRecord{}.Mixin()
+	idempotencyrecordMixinFields0 := idempotencyrecordMixin[0].Fields()
+	_ = idempotencyrecordMixinFields0
+	idempotencyrecordFields := schema.IdempotencyRecord{}.Fields()
+	_ = idempotencyrecordFields
+	// idempotencyrecordDescCreatedAt is the schema descriptor for created_at field.
+	idempotencyrecordDescCreatedAt := idempotencyrecordMixinFields0[0].Descriptor()
+	// idempotencyrecord.DefaultCreatedAt holds the default value on creation for the created_at field.
+	idempotencyrecord.DefaultCreatedAt = idempotencyrecordDescCreatedAt.Default.(func() time.Time)
+	// idempotencyrecordDescUpdatedAt is the schema descriptor for updated_at field.
+	idempotencyrecordDescUpdatedAt := idempotencyrecordMixinFields0[1].Descriptor()
+	// idempotencyrecord.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	idempotencyrecord.DefaultUpdatedAt = idempotencyrecordDescUpdatedAt.Default.(func() time.Time)
+	// idempotencyrecord.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	idempotencyrecord.UpdateDefaultUpdatedAt = idempotencyrecordDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// idempotencyrecordDescOperation is the schema descriptor for operation field.
+	idempotencyrecordDescOperation := idempotencyrecordFields[1].Descriptor()
+	// idempotencyrecord.OperationValidator is a validator for the "operation" field. It is called by the builders before save.
+	idempotencyrecord.OperationValidator = fallbackStringValidator(idempotencyrecordDescOperation.Validators)
+	// idempotencyrecordDescScope is the schema descriptor for scope field.
+	idempotencyrecordDescScope := idempotencyrecordFields[2].Descriptor()
+	// idempotencyrecord.ScopeValidator is a validator for the "scope" field. It is called by the builders before save.
+	idempotencyrecord.ScopeValidator = fallbackStringValidator(idempotencyrecordDescScope.Validators)
+	// idempotencyrecordDescKey is the schema descriptor for key field.
+	idempotencyrecordDescKey := idempotencyrecordFields[3].Descriptor()
+	// idempotencyrecord.KeyValidator is a validator for the "key" field. It is called by the builders before save.
+	idempotencyrecord.KeyValidator = fallbackStringValidator(idempotencyrecordDescKey.Validators)
+	// idempotencyrecordDescRequestHash is the schema descriptor for request_hash field.
+	idempotencyrecordDescRequestHash := idempotencyrecordFields[4].Descriptor()
+	// idempotencyrecord.RequestHashValidator is a validator for the "request_hash" field. It is called by the builders before save.
+	idempotencyrecord.RequestHashValidator = fallbackStringValidator(idempotencyrecordDescRequestHash.Validators)
+	// idempotencyrecordDescStatusCode is the schema descriptor for status_code field.
+	idempotencyrecordDescStatusCode := idempotencyrecordFields[5].Descriptor()
+	// idempotencyrecord.DefaultStatusCode holds the default value on creation for the status_code field.
+	idempotencyrecord.DefaultStatusCode = idempotencyrecordDescStatusCode.Default.(int)
+	// idempotencyrecordDescID is the schema descriptor for id field.
+	idempotencyrecordDescID := idempotencyrecordFields[0].Descriptor()
+	// idempotencyrecord.DefaultID holds the default value on creation for the id field.
+	idempotencyrecord.DefaultID = idempotencyrecordDescID.Default.(func() uuid.UUID)
 }

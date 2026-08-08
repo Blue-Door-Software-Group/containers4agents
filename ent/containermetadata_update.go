@@ -116,6 +116,127 @@ func (_u *ContainerMetadataUpdate) ClearLastActivityAt() *ContainerMetadataUpdat
 	return _u
 }
 
+// SetIdleStopDeadlineAt sets the "idle_stop_deadline_at" field.
+func (_u *ContainerMetadataUpdate) SetIdleStopDeadlineAt(v time.Time) *ContainerMetadataUpdate {
+	_u.mutation.SetIdleStopDeadlineAt(v)
+	return _u
+}
+
+// SetNillableIdleStopDeadlineAt sets the "idle_stop_deadline_at" field if the given value is not nil.
+func (_u *ContainerMetadataUpdate) SetNillableIdleStopDeadlineAt(v *time.Time) *ContainerMetadataUpdate {
+	if v != nil {
+		_u.SetIdleStopDeadlineAt(*v)
+	}
+	return _u
+}
+
+// ClearIdleStopDeadlineAt clears the value of the "idle_stop_deadline_at" field.
+func (_u *ContainerMetadataUpdate) ClearIdleStopDeadlineAt() *ContainerMetadataUpdate {
+	_u.mutation.ClearIdleStopDeadlineAt()
+	return _u
+}
+
+// SetRetentionPruneDeadlineAt sets the "retention_prune_deadline_at" field.
+func (_u *ContainerMetadataUpdate) SetRetentionPruneDeadlineAt(v time.Time) *ContainerMetadataUpdate {
+	_u.mutation.SetRetentionPruneDeadlineAt(v)
+	return _u
+}
+
+// SetNillableRetentionPruneDeadlineAt sets the "retention_prune_deadline_at" field if the given value is not nil.
+func (_u *ContainerMetadataUpdate) SetNillableRetentionPruneDeadlineAt(v *time.Time) *ContainerMetadataUpdate {
+	if v != nil {
+		_u.SetRetentionPruneDeadlineAt(*v)
+	}
+	return _u
+}
+
+// ClearRetentionPruneDeadlineAt clears the value of the "retention_prune_deadline_at" field.
+func (_u *ContainerMetadataUpdate) ClearRetentionPruneDeadlineAt() *ContainerMetadataUpdate {
+	_u.mutation.ClearRetentionPruneDeadlineAt()
+	return _u
+}
+
+// SetStoppedAt sets the "stopped_at" field.
+func (_u *ContainerMetadataUpdate) SetStoppedAt(v time.Time) *ContainerMetadataUpdate {
+	_u.mutation.SetStoppedAt(v)
+	return _u
+}
+
+// SetNillableStoppedAt sets the "stopped_at" field if the given value is not nil.
+func (_u *ContainerMetadataUpdate) SetNillableStoppedAt(v *time.Time) *ContainerMetadataUpdate {
+	if v != nil {
+		_u.SetStoppedAt(*v)
+	}
+	return _u
+}
+
+// ClearStoppedAt clears the value of the "stopped_at" field.
+func (_u *ContainerMetadataUpdate) ClearStoppedAt() *ContainerMetadataUpdate {
+	_u.mutation.ClearStoppedAt()
+	return _u
+}
+
+// SetPruneRetryCount sets the "prune_retry_count" field.
+func (_u *ContainerMetadataUpdate) SetPruneRetryCount(v int) *ContainerMetadataUpdate {
+	_u.mutation.ResetPruneRetryCount()
+	_u.mutation.SetPruneRetryCount(v)
+	return _u
+}
+
+// SetNillablePruneRetryCount sets the "prune_retry_count" field if the given value is not nil.
+func (_u *ContainerMetadataUpdate) SetNillablePruneRetryCount(v *int) *ContainerMetadataUpdate {
+	if v != nil {
+		_u.SetPruneRetryCount(*v)
+	}
+	return _u
+}
+
+// AddPruneRetryCount adds value to the "prune_retry_count" field.
+func (_u *ContainerMetadataUpdate) AddPruneRetryCount(v int) *ContainerMetadataUpdate {
+	_u.mutation.AddPruneRetryCount(v)
+	return _u
+}
+
+// SetNextPruneRetryAt sets the "next_prune_retry_at" field.
+func (_u *ContainerMetadataUpdate) SetNextPruneRetryAt(v time.Time) *ContainerMetadataUpdate {
+	_u.mutation.SetNextPruneRetryAt(v)
+	return _u
+}
+
+// SetNillableNextPruneRetryAt sets the "next_prune_retry_at" field if the given value is not nil.
+func (_u *ContainerMetadataUpdate) SetNillableNextPruneRetryAt(v *time.Time) *ContainerMetadataUpdate {
+	if v != nil {
+		_u.SetNextPruneRetryAt(*v)
+	}
+	return _u
+}
+
+// ClearNextPruneRetryAt clears the value of the "next_prune_retry_at" field.
+func (_u *ContainerMetadataUpdate) ClearNextPruneRetryAt() *ContainerMetadataUpdate {
+	_u.mutation.ClearNextPruneRetryAt()
+	return _u
+}
+
+// SetLastPruneError sets the "last_prune_error" field.
+func (_u *ContainerMetadataUpdate) SetLastPruneError(v string) *ContainerMetadataUpdate {
+	_u.mutation.SetLastPruneError(v)
+	return _u
+}
+
+// SetNillableLastPruneError sets the "last_prune_error" field if the given value is not nil.
+func (_u *ContainerMetadataUpdate) SetNillableLastPruneError(v *string) *ContainerMetadataUpdate {
+	if v != nil {
+		_u.SetLastPruneError(*v)
+	}
+	return _u
+}
+
+// ClearLastPruneError clears the value of the "last_prune_error" field.
+func (_u *ContainerMetadataUpdate) ClearLastPruneError() *ContainerMetadataUpdate {
+	_u.mutation.ClearLastPruneError()
+	return _u
+}
+
 // SetExecInProgress sets the "exec_in_progress" field.
 func (_u *ContainerMetadataUpdate) SetExecInProgress(v bool) *ContainerMetadataUpdate {
 	_u.mutation.SetExecInProgress(v)
@@ -221,6 +342,42 @@ func (_u *ContainerMetadataUpdate) sqlSave(ctx context.Context) (_node int, err 
 	}
 	if _u.mutation.LastActivityAtCleared() {
 		_spec.ClearField(containermetadata.FieldLastActivityAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.IdleStopDeadlineAt(); ok {
+		_spec.SetField(containermetadata.FieldIdleStopDeadlineAt, field.TypeTime, value)
+	}
+	if _u.mutation.IdleStopDeadlineAtCleared() {
+		_spec.ClearField(containermetadata.FieldIdleStopDeadlineAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.RetentionPruneDeadlineAt(); ok {
+		_spec.SetField(containermetadata.FieldRetentionPruneDeadlineAt, field.TypeTime, value)
+	}
+	if _u.mutation.RetentionPruneDeadlineAtCleared() {
+		_spec.ClearField(containermetadata.FieldRetentionPruneDeadlineAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.StoppedAt(); ok {
+		_spec.SetField(containermetadata.FieldStoppedAt, field.TypeTime, value)
+	}
+	if _u.mutation.StoppedAtCleared() {
+		_spec.ClearField(containermetadata.FieldStoppedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.PruneRetryCount(); ok {
+		_spec.SetField(containermetadata.FieldPruneRetryCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedPruneRetryCount(); ok {
+		_spec.AddField(containermetadata.FieldPruneRetryCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.NextPruneRetryAt(); ok {
+		_spec.SetField(containermetadata.FieldNextPruneRetryAt, field.TypeTime, value)
+	}
+	if _u.mutation.NextPruneRetryAtCleared() {
+		_spec.ClearField(containermetadata.FieldNextPruneRetryAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.LastPruneError(); ok {
+		_spec.SetField(containermetadata.FieldLastPruneError, field.TypeString, value)
+	}
+	if _u.mutation.LastPruneErrorCleared() {
+		_spec.ClearField(containermetadata.FieldLastPruneError, field.TypeString)
 	}
 	if value, ok := _u.mutation.ExecInProgress(); ok {
 		_spec.SetField(containermetadata.FieldExecInProgress, field.TypeBool, value)
@@ -330,6 +487,127 @@ func (_u *ContainerMetadataUpdateOne) SetNillableLastActivityAt(v *time.Time) *C
 // ClearLastActivityAt clears the value of the "last_activity_at" field.
 func (_u *ContainerMetadataUpdateOne) ClearLastActivityAt() *ContainerMetadataUpdateOne {
 	_u.mutation.ClearLastActivityAt()
+	return _u
+}
+
+// SetIdleStopDeadlineAt sets the "idle_stop_deadline_at" field.
+func (_u *ContainerMetadataUpdateOne) SetIdleStopDeadlineAt(v time.Time) *ContainerMetadataUpdateOne {
+	_u.mutation.SetIdleStopDeadlineAt(v)
+	return _u
+}
+
+// SetNillableIdleStopDeadlineAt sets the "idle_stop_deadline_at" field if the given value is not nil.
+func (_u *ContainerMetadataUpdateOne) SetNillableIdleStopDeadlineAt(v *time.Time) *ContainerMetadataUpdateOne {
+	if v != nil {
+		_u.SetIdleStopDeadlineAt(*v)
+	}
+	return _u
+}
+
+// ClearIdleStopDeadlineAt clears the value of the "idle_stop_deadline_at" field.
+func (_u *ContainerMetadataUpdateOne) ClearIdleStopDeadlineAt() *ContainerMetadataUpdateOne {
+	_u.mutation.ClearIdleStopDeadlineAt()
+	return _u
+}
+
+// SetRetentionPruneDeadlineAt sets the "retention_prune_deadline_at" field.
+func (_u *ContainerMetadataUpdateOne) SetRetentionPruneDeadlineAt(v time.Time) *ContainerMetadataUpdateOne {
+	_u.mutation.SetRetentionPruneDeadlineAt(v)
+	return _u
+}
+
+// SetNillableRetentionPruneDeadlineAt sets the "retention_prune_deadline_at" field if the given value is not nil.
+func (_u *ContainerMetadataUpdateOne) SetNillableRetentionPruneDeadlineAt(v *time.Time) *ContainerMetadataUpdateOne {
+	if v != nil {
+		_u.SetRetentionPruneDeadlineAt(*v)
+	}
+	return _u
+}
+
+// ClearRetentionPruneDeadlineAt clears the value of the "retention_prune_deadline_at" field.
+func (_u *ContainerMetadataUpdateOne) ClearRetentionPruneDeadlineAt() *ContainerMetadataUpdateOne {
+	_u.mutation.ClearRetentionPruneDeadlineAt()
+	return _u
+}
+
+// SetStoppedAt sets the "stopped_at" field.
+func (_u *ContainerMetadataUpdateOne) SetStoppedAt(v time.Time) *ContainerMetadataUpdateOne {
+	_u.mutation.SetStoppedAt(v)
+	return _u
+}
+
+// SetNillableStoppedAt sets the "stopped_at" field if the given value is not nil.
+func (_u *ContainerMetadataUpdateOne) SetNillableStoppedAt(v *time.Time) *ContainerMetadataUpdateOne {
+	if v != nil {
+		_u.SetStoppedAt(*v)
+	}
+	return _u
+}
+
+// ClearStoppedAt clears the value of the "stopped_at" field.
+func (_u *ContainerMetadataUpdateOne) ClearStoppedAt() *ContainerMetadataUpdateOne {
+	_u.mutation.ClearStoppedAt()
+	return _u
+}
+
+// SetPruneRetryCount sets the "prune_retry_count" field.
+func (_u *ContainerMetadataUpdateOne) SetPruneRetryCount(v int) *ContainerMetadataUpdateOne {
+	_u.mutation.ResetPruneRetryCount()
+	_u.mutation.SetPruneRetryCount(v)
+	return _u
+}
+
+// SetNillablePruneRetryCount sets the "prune_retry_count" field if the given value is not nil.
+func (_u *ContainerMetadataUpdateOne) SetNillablePruneRetryCount(v *int) *ContainerMetadataUpdateOne {
+	if v != nil {
+		_u.SetPruneRetryCount(*v)
+	}
+	return _u
+}
+
+// AddPruneRetryCount adds value to the "prune_retry_count" field.
+func (_u *ContainerMetadataUpdateOne) AddPruneRetryCount(v int) *ContainerMetadataUpdateOne {
+	_u.mutation.AddPruneRetryCount(v)
+	return _u
+}
+
+// SetNextPruneRetryAt sets the "next_prune_retry_at" field.
+func (_u *ContainerMetadataUpdateOne) SetNextPruneRetryAt(v time.Time) *ContainerMetadataUpdateOne {
+	_u.mutation.SetNextPruneRetryAt(v)
+	return _u
+}
+
+// SetNillableNextPruneRetryAt sets the "next_prune_retry_at" field if the given value is not nil.
+func (_u *ContainerMetadataUpdateOne) SetNillableNextPruneRetryAt(v *time.Time) *ContainerMetadataUpdateOne {
+	if v != nil {
+		_u.SetNextPruneRetryAt(*v)
+	}
+	return _u
+}
+
+// ClearNextPruneRetryAt clears the value of the "next_prune_retry_at" field.
+func (_u *ContainerMetadataUpdateOne) ClearNextPruneRetryAt() *ContainerMetadataUpdateOne {
+	_u.mutation.ClearNextPruneRetryAt()
+	return _u
+}
+
+// SetLastPruneError sets the "last_prune_error" field.
+func (_u *ContainerMetadataUpdateOne) SetLastPruneError(v string) *ContainerMetadataUpdateOne {
+	_u.mutation.SetLastPruneError(v)
+	return _u
+}
+
+// SetNillableLastPruneError sets the "last_prune_error" field if the given value is not nil.
+func (_u *ContainerMetadataUpdateOne) SetNillableLastPruneError(v *string) *ContainerMetadataUpdateOne {
+	if v != nil {
+		_u.SetLastPruneError(*v)
+	}
+	return _u
+}
+
+// ClearLastPruneError clears the value of the "last_prune_error" field.
+func (_u *ContainerMetadataUpdateOne) ClearLastPruneError() *ContainerMetadataUpdateOne {
+	_u.mutation.ClearLastPruneError()
 	return _u
 }
 
@@ -468,6 +746,42 @@ func (_u *ContainerMetadataUpdateOne) sqlSave(ctx context.Context) (_node *Conta
 	}
 	if _u.mutation.LastActivityAtCleared() {
 		_spec.ClearField(containermetadata.FieldLastActivityAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.IdleStopDeadlineAt(); ok {
+		_spec.SetField(containermetadata.FieldIdleStopDeadlineAt, field.TypeTime, value)
+	}
+	if _u.mutation.IdleStopDeadlineAtCleared() {
+		_spec.ClearField(containermetadata.FieldIdleStopDeadlineAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.RetentionPruneDeadlineAt(); ok {
+		_spec.SetField(containermetadata.FieldRetentionPruneDeadlineAt, field.TypeTime, value)
+	}
+	if _u.mutation.RetentionPruneDeadlineAtCleared() {
+		_spec.ClearField(containermetadata.FieldRetentionPruneDeadlineAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.StoppedAt(); ok {
+		_spec.SetField(containermetadata.FieldStoppedAt, field.TypeTime, value)
+	}
+	if _u.mutation.StoppedAtCleared() {
+		_spec.ClearField(containermetadata.FieldStoppedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.PruneRetryCount(); ok {
+		_spec.SetField(containermetadata.FieldPruneRetryCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedPruneRetryCount(); ok {
+		_spec.AddField(containermetadata.FieldPruneRetryCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.NextPruneRetryAt(); ok {
+		_spec.SetField(containermetadata.FieldNextPruneRetryAt, field.TypeTime, value)
+	}
+	if _u.mutation.NextPruneRetryAtCleared() {
+		_spec.ClearField(containermetadata.FieldNextPruneRetryAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.LastPruneError(); ok {
+		_spec.SetField(containermetadata.FieldLastPruneError, field.TypeString, value)
+	}
+	if _u.mutation.LastPruneErrorCleared() {
+		_spec.ClearField(containermetadata.FieldLastPruneError, field.TypeString)
 	}
 	if value, ok := _u.mutation.ExecInProgress(); ok {
 		_spec.SetField(containermetadata.FieldExecInProgress, field.TypeBool, value)

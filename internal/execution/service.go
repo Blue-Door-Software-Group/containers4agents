@@ -132,15 +132,20 @@ func (s *Service) Execute(ctx context.Context, externalID string, command []stri
 	}
 
 	_, updateErr := s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
-		ExternalID:     row.ExternalID,
-		State:          lifecycle.StateRunning,
-		SetActivityNow: true,
+		ExternalID:         row.ExternalID,
+		State:              lifecycle.StateRunning,
+		SetActivityNow:     true,
+		IdleStopDeadlineAt: timePtr(time.Now().UTC().Add(s.cfg.IdleStopTimeout)),
 	}, lifecycle.StateRunning)
 	if updateErr != nil && !errors.Is(updateErr, repository.ErrStateConflict) && !errors.Is(updateErr, repository.ErrNotFound) {
 		slog.WarnContext(ctx, "failed to persist execution activity timestamp", "external_id", row.ExternalID, "error", updateErr)
 	}
 
 	return result, nil
+}
+
+func timePtr(t time.Time) *time.Time {
+	return &t
 }
 
 func normalizeStatus(status string, exitCode *int) string {

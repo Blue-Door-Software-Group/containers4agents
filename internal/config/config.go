@@ -38,6 +38,14 @@ type Config struct {
 	ContainerReadOnlyRootFS      bool
 	ContainerSeccompProfilePath  string
 	ContainerFileCountMax        int64
+	ReconcileEnabled             bool
+	ReconcileDistributed         bool
+	ReconcileInterval            time.Duration
+	ReconcileLockKey             int64
+	ReconcileFollowerRetry       time.Duration
+	IdleStopTimeout              time.Duration
+	StoppedRetentionTimeout      time.Duration
+	IdempotencyTTL               time.Duration
 	ExecTimeout                  time.Duration
 	ExecMaxStdoutBytes           int
 	ExecMaxStderrBytes           int
@@ -65,11 +73,43 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	reconcileEnabled, err := getEnvBool("C4A_RECONCILE_ENABLED", true)
+	if err != nil {
+		return Config{}, err
+	}
+	reconcileDistributed, err := getEnvBool("C4A_RECONCILE_DISTRIBUTED", true)
+	if err != nil {
+		return Config{}, err
+	}
 	startupTimeout, err := getEnvDuration("C4A_STARTUP_TIMEOUT", 30*time.Second)
 	if err != nil {
 		return Config{}, err
 	}
 	shutdownTimeout, err := getEnvDuration("C4A_SHUTDOWN_TIMEOUT", 15*time.Second)
+	if err != nil {
+		return Config{}, err
+	}
+	reconcileInterval, err := getEnvDuration("C4A_RECONCILE_INTERVAL", 30*time.Second)
+	if err != nil {
+		return Config{}, err
+	}
+	reconcileFollowerRetry, err := getEnvDuration("C4A_RECONCILE_FOLLOWER_RETRY", 5*time.Second)
+	if err != nil {
+		return Config{}, err
+	}
+	reconcileLockKey, err := getEnvInt64("C4A_RECONCILE_LOCK_KEY", 64001)
+	if err != nil {
+		return Config{}, err
+	}
+	idleStopTimeout, err := getEnvDuration("C4A_IDLE_STOP_TIMEOUT", 20*time.Minute)
+	if err != nil {
+		return Config{}, err
+	}
+	stoppedRetentionTimeout, err := getEnvDuration("C4A_STOPPED_RETENTION_TIMEOUT", 24*time.Hour)
+	if err != nil {
+		return Config{}, err
+	}
+	idempotencyTTL, err := getEnvDuration("C4A_IDEMPOTENCY_TTL", 24*time.Hour)
 	if err != nil {
 		return Config{}, err
 	}
@@ -126,6 +166,14 @@ func Load() (Config, error) {
 		ContainerReadOnlyRootFS:      defaultProfile.Security.ReadOnlyRootFS,
 		ContainerSeccompProfilePath:  strings.TrimSpace(os.Getenv("C4A_SECCOMP_PROFILE_PATH")),
 		ContainerFileCountMax:        defaultProfile.Disk.FileCountMax,
+		ReconcileEnabled:             reconcileEnabled,
+		ReconcileDistributed:         reconcileDistributed,
+		ReconcileInterval:            reconcileInterval,
+		ReconcileLockKey:             reconcileLockKey,
+		ReconcileFollowerRetry:       reconcileFollowerRetry,
+		IdleStopTimeout:              idleStopTimeout,
+		StoppedRetentionTimeout:      stoppedRetentionTimeout,
+		IdempotencyTTL:               idempotencyTTL,
 		ExecTimeout:                  execTimeout,
 		ExecMaxStdoutBytes:           execMaxStdoutBytes,
 		ExecMaxStderrBytes:           execMaxStderrBytes,
@@ -196,6 +244,21 @@ func Load() (Config, error) {
 	}
 	if cfg.ContainerCPUMaxCores <= 0 || cfg.ContainerMemoryMaxBytes <= 0 || cfg.ContainerTmpDiskMaxBytes <= 0 || cfg.ContainerPIDsMax <= 0 || cfg.ContainerFileCountMax <= 0 {
 		return Config{}, fmt.Errorf("container runtime defaults must be greater than zero")
+	}
+	if cfg.ReconcileInterval <= 0 {
+		return Config{}, fmt.Errorf("C4A_RECONCILE_INTERVAL must be greater than zero")
+	}
+	if cfg.ReconcileFollowerRetry <= 0 {
+		return Config{}, fmt.Errorf("C4A_RECONCILE_FOLLOWER_RETRY must be greater than zero")
+	}
+	if cfg.IdleStopTimeout <= 0 {
+		return Config{}, fmt.Errorf("C4A_IDLE_STOP_TIMEOUT must be greater than zero")
+	}
+	if cfg.StoppedRetentionTimeout <= 0 {
+		return Config{}, fmt.Errorf("C4A_STOPPED_RETENTION_TIMEOUT must be greater than zero")
+	}
+	if cfg.IdempotencyTTL <= 0 {
+		return Config{}, fmt.Errorf("C4A_IDEMPOTENCY_TTL must be greater than zero")
 	}
 
 	return cfg, nil

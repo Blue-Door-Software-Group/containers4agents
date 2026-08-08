@@ -16,6 +16,7 @@ import (
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
 	"github.com/Blue-Door-Software-Group/containers4agents/ent/containermetadata"
+	"github.com/Blue-Door-Software-Group/containers4agents/ent/idempotencyrecord"
 )
 
 // Client is the client that holds all ent builders.
@@ -25,6 +26,8 @@ type Client struct {
 	Schema *migrate.Schema
 	// ContainerMetadata is the client for interacting with the ContainerMetadata builders.
 	ContainerMetadata *ContainerMetadataClient
+	// IdempotencyRecord is the client for interacting with the IdempotencyRecord builders.
+	IdempotencyRecord *IdempotencyRecordClient
 }
 
 // NewClient creates a new client configured with the given options.
@@ -37,6 +40,7 @@ func NewClient(opts ...Option) *Client {
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
 	c.ContainerMetadata = NewContainerMetadataClient(c.config)
+	c.IdempotencyRecord = NewIdempotencyRecordClient(c.config)
 }
 
 type (
@@ -130,6 +134,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ctx:               ctx,
 		config:            cfg,
 		ContainerMetadata: NewContainerMetadataClient(cfg),
+		IdempotencyRecord: NewIdempotencyRecordClient(cfg),
 	}, nil
 }
 
@@ -150,6 +155,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ctx:               ctx,
 		config:            cfg,
 		ContainerMetadata: NewContainerMetadataClient(cfg),
+		IdempotencyRecord: NewIdempotencyRecordClient(cfg),
 	}, nil
 }
 
@@ -179,12 +185,14 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	c.ContainerMetadata.Use(hooks...)
+	c.IdempotencyRecord.Use(hooks...)
 }
 
 // Intercept adds the query interceptors to all the entity clients.
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	c.ContainerMetadata.Intercept(interceptors...)
+	c.IdempotencyRecord.Intercept(interceptors...)
 }
 
 // Mutate implements the ent.Mutator interface.
@@ -192,6 +200,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
 	case *ContainerMetadataMutation:
 		return c.ContainerMetadata.mutate(ctx, m)
+	case *IdempotencyRecordMutation:
+		return c.IdempotencyRecord.mutate(ctx, m)
 	default:
 		return nil, fmt.Errorf("ent: unknown mutation type %T", m)
 	}
@@ -330,12 +340,145 @@ func (c *ContainerMetadataClient) mutate(ctx context.Context, m *ContainerMetada
 	}
 }
 
+// IdempotencyRecordClient is a client for the IdempotencyRecord schema.
+type IdempotencyRecordClient struct {
+	config
+}
+
+// NewIdempotencyRecordClient returns a client for the IdempotencyRecord from the given config.
+func NewIdempotencyRecordClient(c config) *IdempotencyRecordClient {
+	return &IdempotencyRecordClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `idempotencyrecord.Hooks(f(g(h())))`.
+func (c *IdempotencyRecordClient) Use(hooks ...Hook) {
+	c.hooks.IdempotencyRecord = append(c.hooks.IdempotencyRecord, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `idempotencyrecord.Intercept(f(g(h())))`.
+func (c *IdempotencyRecordClient) Intercept(interceptors ...Interceptor) {
+	c.inters.IdempotencyRecord = append(c.inters.IdempotencyRecord, interceptors...)
+}
+
+// Create returns a builder for creating a IdempotencyRecord entity.
+func (c *IdempotencyRecordClient) Create() *IdempotencyRecordCreate {
+	mutation := newIdempotencyRecordMutation(c.config, OpCreate)
+	return &IdempotencyRecordCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of IdempotencyRecord entities.
+func (c *IdempotencyRecordClient) CreateBulk(builders ...*IdempotencyRecordCreate) *IdempotencyRecordCreateBulk {
+	return &IdempotencyRecordCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *IdempotencyRecordClient) MapCreateBulk(slice any, setFunc func(*IdempotencyRecordCreate, int)) *IdempotencyRecordCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &IdempotencyRecordCreateBulk{err: fmt.Errorf("calling to IdempotencyRecordClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*IdempotencyRecordCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &IdempotencyRecordCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for IdempotencyRecord.
+func (c *IdempotencyRecordClient) Update() *IdempotencyRecordUpdate {
+	mutation := newIdempotencyRecordMutation(c.config, OpUpdate)
+	return &IdempotencyRecordUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *IdempotencyRecordClient) UpdateOne(_m *IdempotencyRecord) *IdempotencyRecordUpdateOne {
+	mutation := newIdempotencyRecordMutation(c.config, OpUpdateOne, withIdempotencyRecord(_m))
+	return &IdempotencyRecordUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *IdempotencyRecordClient) UpdateOneID(id uuid.UUID) *IdempotencyRecordUpdateOne {
+	mutation := newIdempotencyRecordMutation(c.config, OpUpdateOne, withIdempotencyRecordID(id))
+	return &IdempotencyRecordUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for IdempotencyRecord.
+func (c *IdempotencyRecordClient) Delete() *IdempotencyRecordDelete {
+	mutation := newIdempotencyRecordMutation(c.config, OpDelete)
+	return &IdempotencyRecordDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *IdempotencyRecordClient) DeleteOne(_m *IdempotencyRecord) *IdempotencyRecordDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *IdempotencyRecordClient) DeleteOneID(id uuid.UUID) *IdempotencyRecordDeleteOne {
+	builder := c.Delete().Where(idempotencyrecord.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &IdempotencyRecordDeleteOne{builder}
+}
+
+// Query returns a query builder for IdempotencyRecord.
+func (c *IdempotencyRecordClient) Query() *IdempotencyRecordQuery {
+	return &IdempotencyRecordQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeIdempotencyRecord},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a IdempotencyRecord entity by its id.
+func (c *IdempotencyRecordClient) Get(ctx context.Context, id uuid.UUID) (*IdempotencyRecord, error) {
+	return c.Query().Where(idempotencyrecord.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *IdempotencyRecordClient) GetX(ctx context.Context, id uuid.UUID) *IdempotencyRecord {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *IdempotencyRecordClient) Hooks() []Hook {
+	return c.hooks.IdempotencyRecord
+}
+
+// Interceptors returns the client interceptors.
+func (c *IdempotencyRecordClient) Interceptors() []Interceptor {
+	return c.inters.IdempotencyRecord
+}
+
+func (c *IdempotencyRecordClient) mutate(ctx context.Context, m *IdempotencyRecordMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&IdempotencyRecordCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&IdempotencyRecordUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&IdempotencyRecordUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&IdempotencyRecordDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown IdempotencyRecord mutation op: %q", m.Op())
+	}
+}
+
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		ContainerMetadata []ent.Hook
+		ContainerMetadata, IdempotencyRecord []ent.Hook
 	}
 	inters struct {
-		ContainerMetadata []ent.Interceptor
+		ContainerMetadata, IdempotencyRecord []ent.Interceptor
 	}
 )

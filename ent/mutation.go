@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/Blue-Door-Software-Group/containers4agents/ent/containermetadata"
+	"github.com/Blue-Door-Software-Group/containers4agents/ent/idempotencyrecord"
 	"github.com/Blue-Door-Software-Group/containers4agents/ent/predicate"
 	"github.com/google/uuid"
 )
@@ -26,27 +27,35 @@ const (
 
 	// Node types.
 	TypeContainerMetadata = "ContainerMetadata"
+	TypeIdempotencyRecord = "IdempotencyRecord"
 )
 
 // ContainerMetadataMutation represents an operation that mutates the ContainerMetadata nodes in the graph.
 type ContainerMetadataMutation struct {
 	config
-	op               Op
-	typ              string
-	id               *uuid.UUID
-	created_at       *time.Time
-	updated_at       *time.Time
-	external_id      *string
-	state            *string
-	profile          *string
-	image_version    *string
-	provider_ref     *string
-	last_activity_at *time.Time
-	exec_in_progress *bool
-	clearedFields    map[string]struct{}
-	done             bool
-	oldValue         func(context.Context) (*ContainerMetadata, error)
-	predicates       []predicate.ContainerMetadata
+	op                          Op
+	typ                         string
+	id                          *uuid.UUID
+	created_at                  *time.Time
+	updated_at                  *time.Time
+	external_id                 *string
+	state                       *string
+	profile                     *string
+	image_version               *string
+	provider_ref                *string
+	last_activity_at            *time.Time
+	idle_stop_deadline_at       *time.Time
+	retention_prune_deadline_at *time.Time
+	stopped_at                  *time.Time
+	prune_retry_count           *int
+	addprune_retry_count        *int
+	next_prune_retry_at         *time.Time
+	last_prune_error            *string
+	exec_in_progress            *bool
+	clearedFields               map[string]struct{}
+	done                        bool
+	oldValue                    func(context.Context) (*ContainerMetadata, error)
+	predicates                  []predicate.ContainerMetadata
 }
 
 var _ ent.Mutation = (*ContainerMetadataMutation)(nil)
@@ -467,6 +476,307 @@ func (m *ContainerMetadataMutation) ResetLastActivityAt() {
 	delete(m.clearedFields, containermetadata.FieldLastActivityAt)
 }
 
+// SetIdleStopDeadlineAt sets the "idle_stop_deadline_at" field.
+func (m *ContainerMetadataMutation) SetIdleStopDeadlineAt(t time.Time) {
+	m.idle_stop_deadline_at = &t
+}
+
+// IdleStopDeadlineAt returns the value of the "idle_stop_deadline_at" field in the mutation.
+func (m *ContainerMetadataMutation) IdleStopDeadlineAt() (r time.Time, exists bool) {
+	v := m.idle_stop_deadline_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIdleStopDeadlineAt returns the old "idle_stop_deadline_at" field's value of the ContainerMetadata entity.
+// If the ContainerMetadata object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ContainerMetadataMutation) OldIdleStopDeadlineAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIdleStopDeadlineAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIdleStopDeadlineAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIdleStopDeadlineAt: %w", err)
+	}
+	return oldValue.IdleStopDeadlineAt, nil
+}
+
+// ClearIdleStopDeadlineAt clears the value of the "idle_stop_deadline_at" field.
+func (m *ContainerMetadataMutation) ClearIdleStopDeadlineAt() {
+	m.idle_stop_deadline_at = nil
+	m.clearedFields[containermetadata.FieldIdleStopDeadlineAt] = struct{}{}
+}
+
+// IdleStopDeadlineAtCleared returns if the "idle_stop_deadline_at" field was cleared in this mutation.
+func (m *ContainerMetadataMutation) IdleStopDeadlineAtCleared() bool {
+	_, ok := m.clearedFields[containermetadata.FieldIdleStopDeadlineAt]
+	return ok
+}
+
+// ResetIdleStopDeadlineAt resets all changes to the "idle_stop_deadline_at" field.
+func (m *ContainerMetadataMutation) ResetIdleStopDeadlineAt() {
+	m.idle_stop_deadline_at = nil
+	delete(m.clearedFields, containermetadata.FieldIdleStopDeadlineAt)
+}
+
+// SetRetentionPruneDeadlineAt sets the "retention_prune_deadline_at" field.
+func (m *ContainerMetadataMutation) SetRetentionPruneDeadlineAt(t time.Time) {
+	m.retention_prune_deadline_at = &t
+}
+
+// RetentionPruneDeadlineAt returns the value of the "retention_prune_deadline_at" field in the mutation.
+func (m *ContainerMetadataMutation) RetentionPruneDeadlineAt() (r time.Time, exists bool) {
+	v := m.retention_prune_deadline_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRetentionPruneDeadlineAt returns the old "retention_prune_deadline_at" field's value of the ContainerMetadata entity.
+// If the ContainerMetadata object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ContainerMetadataMutation) OldRetentionPruneDeadlineAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRetentionPruneDeadlineAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRetentionPruneDeadlineAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRetentionPruneDeadlineAt: %w", err)
+	}
+	return oldValue.RetentionPruneDeadlineAt, nil
+}
+
+// ClearRetentionPruneDeadlineAt clears the value of the "retention_prune_deadline_at" field.
+func (m *ContainerMetadataMutation) ClearRetentionPruneDeadlineAt() {
+	m.retention_prune_deadline_at = nil
+	m.clearedFields[containermetadata.FieldRetentionPruneDeadlineAt] = struct{}{}
+}
+
+// RetentionPruneDeadlineAtCleared returns if the "retention_prune_deadline_at" field was cleared in this mutation.
+func (m *ContainerMetadataMutation) RetentionPruneDeadlineAtCleared() bool {
+	_, ok := m.clearedFields[containermetadata.FieldRetentionPruneDeadlineAt]
+	return ok
+}
+
+// ResetRetentionPruneDeadlineAt resets all changes to the "retention_prune_deadline_at" field.
+func (m *ContainerMetadataMutation) ResetRetentionPruneDeadlineAt() {
+	m.retention_prune_deadline_at = nil
+	delete(m.clearedFields, containermetadata.FieldRetentionPruneDeadlineAt)
+}
+
+// SetStoppedAt sets the "stopped_at" field.
+func (m *ContainerMetadataMutation) SetStoppedAt(t time.Time) {
+	m.stopped_at = &t
+}
+
+// StoppedAt returns the value of the "stopped_at" field in the mutation.
+func (m *ContainerMetadataMutation) StoppedAt() (r time.Time, exists bool) {
+	v := m.stopped_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStoppedAt returns the old "stopped_at" field's value of the ContainerMetadata entity.
+// If the ContainerMetadata object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ContainerMetadataMutation) OldStoppedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStoppedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStoppedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStoppedAt: %w", err)
+	}
+	return oldValue.StoppedAt, nil
+}
+
+// ClearStoppedAt clears the value of the "stopped_at" field.
+func (m *ContainerMetadataMutation) ClearStoppedAt() {
+	m.stopped_at = nil
+	m.clearedFields[containermetadata.FieldStoppedAt] = struct{}{}
+}
+
+// StoppedAtCleared returns if the "stopped_at" field was cleared in this mutation.
+func (m *ContainerMetadataMutation) StoppedAtCleared() bool {
+	_, ok := m.clearedFields[containermetadata.FieldStoppedAt]
+	return ok
+}
+
+// ResetStoppedAt resets all changes to the "stopped_at" field.
+func (m *ContainerMetadataMutation) ResetStoppedAt() {
+	m.stopped_at = nil
+	delete(m.clearedFields, containermetadata.FieldStoppedAt)
+}
+
+// SetPruneRetryCount sets the "prune_retry_count" field.
+func (m *ContainerMetadataMutation) SetPruneRetryCount(i int) {
+	m.prune_retry_count = &i
+	m.addprune_retry_count = nil
+}
+
+// PruneRetryCount returns the value of the "prune_retry_count" field in the mutation.
+func (m *ContainerMetadataMutation) PruneRetryCount() (r int, exists bool) {
+	v := m.prune_retry_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPruneRetryCount returns the old "prune_retry_count" field's value of the ContainerMetadata entity.
+// If the ContainerMetadata object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ContainerMetadataMutation) OldPruneRetryCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPruneRetryCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPruneRetryCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPruneRetryCount: %w", err)
+	}
+	return oldValue.PruneRetryCount, nil
+}
+
+// AddPruneRetryCount adds i to the "prune_retry_count" field.
+func (m *ContainerMetadataMutation) AddPruneRetryCount(i int) {
+	if m.addprune_retry_count != nil {
+		*m.addprune_retry_count += i
+	} else {
+		m.addprune_retry_count = &i
+	}
+}
+
+// AddedPruneRetryCount returns the value that was added to the "prune_retry_count" field in this mutation.
+func (m *ContainerMetadataMutation) AddedPruneRetryCount() (r int, exists bool) {
+	v := m.addprune_retry_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPruneRetryCount resets all changes to the "prune_retry_count" field.
+func (m *ContainerMetadataMutation) ResetPruneRetryCount() {
+	m.prune_retry_count = nil
+	m.addprune_retry_count = nil
+}
+
+// SetNextPruneRetryAt sets the "next_prune_retry_at" field.
+func (m *ContainerMetadataMutation) SetNextPruneRetryAt(t time.Time) {
+	m.next_prune_retry_at = &t
+}
+
+// NextPruneRetryAt returns the value of the "next_prune_retry_at" field in the mutation.
+func (m *ContainerMetadataMutation) NextPruneRetryAt() (r time.Time, exists bool) {
+	v := m.next_prune_retry_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNextPruneRetryAt returns the old "next_prune_retry_at" field's value of the ContainerMetadata entity.
+// If the ContainerMetadata object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ContainerMetadataMutation) OldNextPruneRetryAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNextPruneRetryAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNextPruneRetryAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNextPruneRetryAt: %w", err)
+	}
+	return oldValue.NextPruneRetryAt, nil
+}
+
+// ClearNextPruneRetryAt clears the value of the "next_prune_retry_at" field.
+func (m *ContainerMetadataMutation) ClearNextPruneRetryAt() {
+	m.next_prune_retry_at = nil
+	m.clearedFields[containermetadata.FieldNextPruneRetryAt] = struct{}{}
+}
+
+// NextPruneRetryAtCleared returns if the "next_prune_retry_at" field was cleared in this mutation.
+func (m *ContainerMetadataMutation) NextPruneRetryAtCleared() bool {
+	_, ok := m.clearedFields[containermetadata.FieldNextPruneRetryAt]
+	return ok
+}
+
+// ResetNextPruneRetryAt resets all changes to the "next_prune_retry_at" field.
+func (m *ContainerMetadataMutation) ResetNextPruneRetryAt() {
+	m.next_prune_retry_at = nil
+	delete(m.clearedFields, containermetadata.FieldNextPruneRetryAt)
+}
+
+// SetLastPruneError sets the "last_prune_error" field.
+func (m *ContainerMetadataMutation) SetLastPruneError(s string) {
+	m.last_prune_error = &s
+}
+
+// LastPruneError returns the value of the "last_prune_error" field in the mutation.
+func (m *ContainerMetadataMutation) LastPruneError() (r string, exists bool) {
+	v := m.last_prune_error
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastPruneError returns the old "last_prune_error" field's value of the ContainerMetadata entity.
+// If the ContainerMetadata object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ContainerMetadataMutation) OldLastPruneError(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastPruneError is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastPruneError requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastPruneError: %w", err)
+	}
+	return oldValue.LastPruneError, nil
+}
+
+// ClearLastPruneError clears the value of the "last_prune_error" field.
+func (m *ContainerMetadataMutation) ClearLastPruneError() {
+	m.last_prune_error = nil
+	m.clearedFields[containermetadata.FieldLastPruneError] = struct{}{}
+}
+
+// LastPruneErrorCleared returns if the "last_prune_error" field was cleared in this mutation.
+func (m *ContainerMetadataMutation) LastPruneErrorCleared() bool {
+	_, ok := m.clearedFields[containermetadata.FieldLastPruneError]
+	return ok
+}
+
+// ResetLastPruneError resets all changes to the "last_prune_error" field.
+func (m *ContainerMetadataMutation) ResetLastPruneError() {
+	m.last_prune_error = nil
+	delete(m.clearedFields, containermetadata.FieldLastPruneError)
+}
+
 // SetExecInProgress sets the "exec_in_progress" field.
 func (m *ContainerMetadataMutation) SetExecInProgress(b bool) {
 	m.exec_in_progress = &b
@@ -537,7 +847,7 @@ func (m *ContainerMetadataMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ContainerMetadataMutation) Fields() []string {
-	fields := make([]string, 0, 9)
+	fields := make([]string, 0, 15)
 	if m.created_at != nil {
 		fields = append(fields, containermetadata.FieldCreatedAt)
 	}
@@ -561,6 +871,24 @@ func (m *ContainerMetadataMutation) Fields() []string {
 	}
 	if m.last_activity_at != nil {
 		fields = append(fields, containermetadata.FieldLastActivityAt)
+	}
+	if m.idle_stop_deadline_at != nil {
+		fields = append(fields, containermetadata.FieldIdleStopDeadlineAt)
+	}
+	if m.retention_prune_deadline_at != nil {
+		fields = append(fields, containermetadata.FieldRetentionPruneDeadlineAt)
+	}
+	if m.stopped_at != nil {
+		fields = append(fields, containermetadata.FieldStoppedAt)
+	}
+	if m.prune_retry_count != nil {
+		fields = append(fields, containermetadata.FieldPruneRetryCount)
+	}
+	if m.next_prune_retry_at != nil {
+		fields = append(fields, containermetadata.FieldNextPruneRetryAt)
+	}
+	if m.last_prune_error != nil {
+		fields = append(fields, containermetadata.FieldLastPruneError)
 	}
 	if m.exec_in_progress != nil {
 		fields = append(fields, containermetadata.FieldExecInProgress)
@@ -589,6 +917,18 @@ func (m *ContainerMetadataMutation) Field(name string) (ent.Value, bool) {
 		return m.ProviderRef()
 	case containermetadata.FieldLastActivityAt:
 		return m.LastActivityAt()
+	case containermetadata.FieldIdleStopDeadlineAt:
+		return m.IdleStopDeadlineAt()
+	case containermetadata.FieldRetentionPruneDeadlineAt:
+		return m.RetentionPruneDeadlineAt()
+	case containermetadata.FieldStoppedAt:
+		return m.StoppedAt()
+	case containermetadata.FieldPruneRetryCount:
+		return m.PruneRetryCount()
+	case containermetadata.FieldNextPruneRetryAt:
+		return m.NextPruneRetryAt()
+	case containermetadata.FieldLastPruneError:
+		return m.LastPruneError()
 	case containermetadata.FieldExecInProgress:
 		return m.ExecInProgress()
 	}
@@ -616,6 +956,18 @@ func (m *ContainerMetadataMutation) OldField(ctx context.Context, name string) (
 		return m.OldProviderRef(ctx)
 	case containermetadata.FieldLastActivityAt:
 		return m.OldLastActivityAt(ctx)
+	case containermetadata.FieldIdleStopDeadlineAt:
+		return m.OldIdleStopDeadlineAt(ctx)
+	case containermetadata.FieldRetentionPruneDeadlineAt:
+		return m.OldRetentionPruneDeadlineAt(ctx)
+	case containermetadata.FieldStoppedAt:
+		return m.OldStoppedAt(ctx)
+	case containermetadata.FieldPruneRetryCount:
+		return m.OldPruneRetryCount(ctx)
+	case containermetadata.FieldNextPruneRetryAt:
+		return m.OldNextPruneRetryAt(ctx)
+	case containermetadata.FieldLastPruneError:
+		return m.OldLastPruneError(ctx)
 	case containermetadata.FieldExecInProgress:
 		return m.OldExecInProgress(ctx)
 	}
@@ -683,6 +1035,48 @@ func (m *ContainerMetadataMutation) SetField(name string, value ent.Value) error
 		}
 		m.SetLastActivityAt(v)
 		return nil
+	case containermetadata.FieldIdleStopDeadlineAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIdleStopDeadlineAt(v)
+		return nil
+	case containermetadata.FieldRetentionPruneDeadlineAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRetentionPruneDeadlineAt(v)
+		return nil
+	case containermetadata.FieldStoppedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStoppedAt(v)
+		return nil
+	case containermetadata.FieldPruneRetryCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPruneRetryCount(v)
+		return nil
+	case containermetadata.FieldNextPruneRetryAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNextPruneRetryAt(v)
+		return nil
+	case containermetadata.FieldLastPruneError:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastPruneError(v)
+		return nil
 	case containermetadata.FieldExecInProgress:
 		v, ok := value.(bool)
 		if !ok {
@@ -697,13 +1091,21 @@ func (m *ContainerMetadataMutation) SetField(name string, value ent.Value) error
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
 func (m *ContainerMetadataMutation) AddedFields() []string {
-	return nil
+	var fields []string
+	if m.addprune_retry_count != nil {
+		fields = append(fields, containermetadata.FieldPruneRetryCount)
+	}
+	return fields
 }
 
 // AddedField returns the numeric value that was incremented/decremented on a field
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
 func (m *ContainerMetadataMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case containermetadata.FieldPruneRetryCount:
+		return m.AddedPruneRetryCount()
+	}
 	return nil, false
 }
 
@@ -712,6 +1114,13 @@ func (m *ContainerMetadataMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *ContainerMetadataMutation) AddField(name string, value ent.Value) error {
 	switch name {
+	case containermetadata.FieldPruneRetryCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPruneRetryCount(v)
+		return nil
 	}
 	return fmt.Errorf("unknown ContainerMetadata numeric field %s", name)
 }
@@ -725,6 +1134,21 @@ func (m *ContainerMetadataMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(containermetadata.FieldLastActivityAt) {
 		fields = append(fields, containermetadata.FieldLastActivityAt)
+	}
+	if m.FieldCleared(containermetadata.FieldIdleStopDeadlineAt) {
+		fields = append(fields, containermetadata.FieldIdleStopDeadlineAt)
+	}
+	if m.FieldCleared(containermetadata.FieldRetentionPruneDeadlineAt) {
+		fields = append(fields, containermetadata.FieldRetentionPruneDeadlineAt)
+	}
+	if m.FieldCleared(containermetadata.FieldStoppedAt) {
+		fields = append(fields, containermetadata.FieldStoppedAt)
+	}
+	if m.FieldCleared(containermetadata.FieldNextPruneRetryAt) {
+		fields = append(fields, containermetadata.FieldNextPruneRetryAt)
+	}
+	if m.FieldCleared(containermetadata.FieldLastPruneError) {
+		fields = append(fields, containermetadata.FieldLastPruneError)
 	}
 	return fields
 }
@@ -745,6 +1169,21 @@ func (m *ContainerMetadataMutation) ClearField(name string) error {
 		return nil
 	case containermetadata.FieldLastActivityAt:
 		m.ClearLastActivityAt()
+		return nil
+	case containermetadata.FieldIdleStopDeadlineAt:
+		m.ClearIdleStopDeadlineAt()
+		return nil
+	case containermetadata.FieldRetentionPruneDeadlineAt:
+		m.ClearRetentionPruneDeadlineAt()
+		return nil
+	case containermetadata.FieldStoppedAt:
+		m.ClearStoppedAt()
+		return nil
+	case containermetadata.FieldNextPruneRetryAt:
+		m.ClearNextPruneRetryAt()
+		return nil
+	case containermetadata.FieldLastPruneError:
+		m.ClearLastPruneError()
 		return nil
 	}
 	return fmt.Errorf("unknown ContainerMetadata nullable field %s", name)
@@ -777,6 +1216,24 @@ func (m *ContainerMetadataMutation) ResetField(name string) error {
 		return nil
 	case containermetadata.FieldLastActivityAt:
 		m.ResetLastActivityAt()
+		return nil
+	case containermetadata.FieldIdleStopDeadlineAt:
+		m.ResetIdleStopDeadlineAt()
+		return nil
+	case containermetadata.FieldRetentionPruneDeadlineAt:
+		m.ResetRetentionPruneDeadlineAt()
+		return nil
+	case containermetadata.FieldStoppedAt:
+		m.ResetStoppedAt()
+		return nil
+	case containermetadata.FieldPruneRetryCount:
+		m.ResetPruneRetryCount()
+		return nil
+	case containermetadata.FieldNextPruneRetryAt:
+		m.ResetNextPruneRetryAt()
+		return nil
+	case containermetadata.FieldLastPruneError:
+		m.ResetLastPruneError()
 		return nil
 	case containermetadata.FieldExecInProgress:
 		m.ResetExecInProgress()
@@ -831,4 +1288,826 @@ func (m *ContainerMetadataMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *ContainerMetadataMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown ContainerMetadata edge %s", name)
+}
+
+// IdempotencyRecordMutation represents an operation that mutates the IdempotencyRecord nodes in the graph.
+type IdempotencyRecordMutation struct {
+	config
+	op             Op
+	typ            string
+	id             *uuid.UUID
+	created_at     *time.Time
+	updated_at     *time.Time
+	operation      *string
+	scope          *string
+	key            *string
+	request_hash   *string
+	status_code    *int
+	addstatus_code *int
+	response_body  *string
+	expires_at     *time.Time
+	clearedFields  map[string]struct{}
+	done           bool
+	oldValue       func(context.Context) (*IdempotencyRecord, error)
+	predicates     []predicate.IdempotencyRecord
+}
+
+var _ ent.Mutation = (*IdempotencyRecordMutation)(nil)
+
+// idempotencyrecordOption allows management of the mutation configuration using functional options.
+type idempotencyrecordOption func(*IdempotencyRecordMutation)
+
+// newIdempotencyRecordMutation creates new mutation for the IdempotencyRecord entity.
+func newIdempotencyRecordMutation(c config, op Op, opts ...idempotencyrecordOption) *IdempotencyRecordMutation {
+	m := &IdempotencyRecordMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeIdempotencyRecord,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withIdempotencyRecordID sets the ID field of the mutation.
+func withIdempotencyRecordID(id uuid.UUID) idempotencyrecordOption {
+	return func(m *IdempotencyRecordMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *IdempotencyRecord
+		)
+		m.oldValue = func(ctx context.Context) (*IdempotencyRecord, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().IdempotencyRecord.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withIdempotencyRecord sets the old IdempotencyRecord of the mutation.
+func withIdempotencyRecord(node *IdempotencyRecord) idempotencyrecordOption {
+	return func(m *IdempotencyRecordMutation) {
+		m.oldValue = func(context.Context) (*IdempotencyRecord, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m IdempotencyRecordMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m IdempotencyRecordMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of IdempotencyRecord entities.
+func (m *IdempotencyRecordMutation) SetID(id uuid.UUID) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *IdempotencyRecordMutation) ID() (id uuid.UUID, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *IdempotencyRecordMutation) IDs(ctx context.Context) ([]uuid.UUID, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []uuid.UUID{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().IdempotencyRecord.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *IdempotencyRecordMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *IdempotencyRecordMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the IdempotencyRecord entity.
+// If the IdempotencyRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *IdempotencyRecordMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *IdempotencyRecordMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *IdempotencyRecordMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *IdempotencyRecordMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the IdempotencyRecord entity.
+// If the IdempotencyRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *IdempotencyRecordMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *IdempotencyRecordMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetOperation sets the "operation" field.
+func (m *IdempotencyRecordMutation) SetOperation(s string) {
+	m.operation = &s
+}
+
+// Operation returns the value of the "operation" field in the mutation.
+func (m *IdempotencyRecordMutation) Operation() (r string, exists bool) {
+	v := m.operation
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOperation returns the old "operation" field's value of the IdempotencyRecord entity.
+// If the IdempotencyRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *IdempotencyRecordMutation) OldOperation(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOperation is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOperation requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOperation: %w", err)
+	}
+	return oldValue.Operation, nil
+}
+
+// ResetOperation resets all changes to the "operation" field.
+func (m *IdempotencyRecordMutation) ResetOperation() {
+	m.operation = nil
+}
+
+// SetScope sets the "scope" field.
+func (m *IdempotencyRecordMutation) SetScope(s string) {
+	m.scope = &s
+}
+
+// Scope returns the value of the "scope" field in the mutation.
+func (m *IdempotencyRecordMutation) Scope() (r string, exists bool) {
+	v := m.scope
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldScope returns the old "scope" field's value of the IdempotencyRecord entity.
+// If the IdempotencyRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *IdempotencyRecordMutation) OldScope(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldScope is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldScope requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldScope: %w", err)
+	}
+	return oldValue.Scope, nil
+}
+
+// ResetScope resets all changes to the "scope" field.
+func (m *IdempotencyRecordMutation) ResetScope() {
+	m.scope = nil
+}
+
+// SetKey sets the "key" field.
+func (m *IdempotencyRecordMutation) SetKey(s string) {
+	m.key = &s
+}
+
+// Key returns the value of the "key" field in the mutation.
+func (m *IdempotencyRecordMutation) Key() (r string, exists bool) {
+	v := m.key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldKey returns the old "key" field's value of the IdempotencyRecord entity.
+// If the IdempotencyRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *IdempotencyRecordMutation) OldKey(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldKey: %w", err)
+	}
+	return oldValue.Key, nil
+}
+
+// ResetKey resets all changes to the "key" field.
+func (m *IdempotencyRecordMutation) ResetKey() {
+	m.key = nil
+}
+
+// SetRequestHash sets the "request_hash" field.
+func (m *IdempotencyRecordMutation) SetRequestHash(s string) {
+	m.request_hash = &s
+}
+
+// RequestHash returns the value of the "request_hash" field in the mutation.
+func (m *IdempotencyRecordMutation) RequestHash() (r string, exists bool) {
+	v := m.request_hash
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestHash returns the old "request_hash" field's value of the IdempotencyRecord entity.
+// If the IdempotencyRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *IdempotencyRecordMutation) OldRequestHash(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestHash is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestHash requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestHash: %w", err)
+	}
+	return oldValue.RequestHash, nil
+}
+
+// ResetRequestHash resets all changes to the "request_hash" field.
+func (m *IdempotencyRecordMutation) ResetRequestHash() {
+	m.request_hash = nil
+}
+
+// SetStatusCode sets the "status_code" field.
+func (m *IdempotencyRecordMutation) SetStatusCode(i int) {
+	m.status_code = &i
+	m.addstatus_code = nil
+}
+
+// StatusCode returns the value of the "status_code" field in the mutation.
+func (m *IdempotencyRecordMutation) StatusCode() (r int, exists bool) {
+	v := m.status_code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatusCode returns the old "status_code" field's value of the IdempotencyRecord entity.
+// If the IdempotencyRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *IdempotencyRecordMutation) OldStatusCode(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatusCode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatusCode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatusCode: %w", err)
+	}
+	return oldValue.StatusCode, nil
+}
+
+// AddStatusCode adds i to the "status_code" field.
+func (m *IdempotencyRecordMutation) AddStatusCode(i int) {
+	if m.addstatus_code != nil {
+		*m.addstatus_code += i
+	} else {
+		m.addstatus_code = &i
+	}
+}
+
+// AddedStatusCode returns the value that was added to the "status_code" field in this mutation.
+func (m *IdempotencyRecordMutation) AddedStatusCode() (r int, exists bool) {
+	v := m.addstatus_code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetStatusCode resets all changes to the "status_code" field.
+func (m *IdempotencyRecordMutation) ResetStatusCode() {
+	m.status_code = nil
+	m.addstatus_code = nil
+}
+
+// SetResponseBody sets the "response_body" field.
+func (m *IdempotencyRecordMutation) SetResponseBody(s string) {
+	m.response_body = &s
+}
+
+// ResponseBody returns the value of the "response_body" field in the mutation.
+func (m *IdempotencyRecordMutation) ResponseBody() (r string, exists bool) {
+	v := m.response_body
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldResponseBody returns the old "response_body" field's value of the IdempotencyRecord entity.
+// If the IdempotencyRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *IdempotencyRecordMutation) OldResponseBody(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldResponseBody is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldResponseBody requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldResponseBody: %w", err)
+	}
+	return oldValue.ResponseBody, nil
+}
+
+// ClearResponseBody clears the value of the "response_body" field.
+func (m *IdempotencyRecordMutation) ClearResponseBody() {
+	m.response_body = nil
+	m.clearedFields[idempotencyrecord.FieldResponseBody] = struct{}{}
+}
+
+// ResponseBodyCleared returns if the "response_body" field was cleared in this mutation.
+func (m *IdempotencyRecordMutation) ResponseBodyCleared() bool {
+	_, ok := m.clearedFields[idempotencyrecord.FieldResponseBody]
+	return ok
+}
+
+// ResetResponseBody resets all changes to the "response_body" field.
+func (m *IdempotencyRecordMutation) ResetResponseBody() {
+	m.response_body = nil
+	delete(m.clearedFields, idempotencyrecord.FieldResponseBody)
+}
+
+// SetExpiresAt sets the "expires_at" field.
+func (m *IdempotencyRecordMutation) SetExpiresAt(t time.Time) {
+	m.expires_at = &t
+}
+
+// ExpiresAt returns the value of the "expires_at" field in the mutation.
+func (m *IdempotencyRecordMutation) ExpiresAt() (r time.Time, exists bool) {
+	v := m.expires_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExpiresAt returns the old "expires_at" field's value of the IdempotencyRecord entity.
+// If the IdempotencyRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *IdempotencyRecordMutation) OldExpiresAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExpiresAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExpiresAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExpiresAt: %w", err)
+	}
+	return oldValue.ExpiresAt, nil
+}
+
+// ResetExpiresAt resets all changes to the "expires_at" field.
+func (m *IdempotencyRecordMutation) ResetExpiresAt() {
+	m.expires_at = nil
+}
+
+// Where appends a list predicates to the IdempotencyRecordMutation builder.
+func (m *IdempotencyRecordMutation) Where(ps ...predicate.IdempotencyRecord) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the IdempotencyRecordMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *IdempotencyRecordMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.IdempotencyRecord, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *IdempotencyRecordMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *IdempotencyRecordMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (IdempotencyRecord).
+func (m *IdempotencyRecordMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *IdempotencyRecordMutation) Fields() []string {
+	fields := make([]string, 0, 9)
+	if m.created_at != nil {
+		fields = append(fields, idempotencyrecord.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, idempotencyrecord.FieldUpdatedAt)
+	}
+	if m.operation != nil {
+		fields = append(fields, idempotencyrecord.FieldOperation)
+	}
+	if m.scope != nil {
+		fields = append(fields, idempotencyrecord.FieldScope)
+	}
+	if m.key != nil {
+		fields = append(fields, idempotencyrecord.FieldKey)
+	}
+	if m.request_hash != nil {
+		fields = append(fields, idempotencyrecord.FieldRequestHash)
+	}
+	if m.status_code != nil {
+		fields = append(fields, idempotencyrecord.FieldStatusCode)
+	}
+	if m.response_body != nil {
+		fields = append(fields, idempotencyrecord.FieldResponseBody)
+	}
+	if m.expires_at != nil {
+		fields = append(fields, idempotencyrecord.FieldExpiresAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *IdempotencyRecordMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case idempotencyrecord.FieldCreatedAt:
+		return m.CreatedAt()
+	case idempotencyrecord.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case idempotencyrecord.FieldOperation:
+		return m.Operation()
+	case idempotencyrecord.FieldScope:
+		return m.Scope()
+	case idempotencyrecord.FieldKey:
+		return m.Key()
+	case idempotencyrecord.FieldRequestHash:
+		return m.RequestHash()
+	case idempotencyrecord.FieldStatusCode:
+		return m.StatusCode()
+	case idempotencyrecord.FieldResponseBody:
+		return m.ResponseBody()
+	case idempotencyrecord.FieldExpiresAt:
+		return m.ExpiresAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *IdempotencyRecordMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case idempotencyrecord.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case idempotencyrecord.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case idempotencyrecord.FieldOperation:
+		return m.OldOperation(ctx)
+	case idempotencyrecord.FieldScope:
+		return m.OldScope(ctx)
+	case idempotencyrecord.FieldKey:
+		return m.OldKey(ctx)
+	case idempotencyrecord.FieldRequestHash:
+		return m.OldRequestHash(ctx)
+	case idempotencyrecord.FieldStatusCode:
+		return m.OldStatusCode(ctx)
+	case idempotencyrecord.FieldResponseBody:
+		return m.OldResponseBody(ctx)
+	case idempotencyrecord.FieldExpiresAt:
+		return m.OldExpiresAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown IdempotencyRecord field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *IdempotencyRecordMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case idempotencyrecord.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case idempotencyrecord.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case idempotencyrecord.FieldOperation:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOperation(v)
+		return nil
+	case idempotencyrecord.FieldScope:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetScope(v)
+		return nil
+	case idempotencyrecord.FieldKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetKey(v)
+		return nil
+	case idempotencyrecord.FieldRequestHash:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestHash(v)
+		return nil
+	case idempotencyrecord.FieldStatusCode:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatusCode(v)
+		return nil
+	case idempotencyrecord.FieldResponseBody:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetResponseBody(v)
+		return nil
+	case idempotencyrecord.FieldExpiresAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExpiresAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown IdempotencyRecord field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *IdempotencyRecordMutation) AddedFields() []string {
+	var fields []string
+	if m.addstatus_code != nil {
+		fields = append(fields, idempotencyrecord.FieldStatusCode)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *IdempotencyRecordMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case idempotencyrecord.FieldStatusCode:
+		return m.AddedStatusCode()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *IdempotencyRecordMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case idempotencyrecord.FieldStatusCode:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddStatusCode(v)
+		return nil
+	}
+	return fmt.Errorf("unknown IdempotencyRecord numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *IdempotencyRecordMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(idempotencyrecord.FieldResponseBody) {
+		fields = append(fields, idempotencyrecord.FieldResponseBody)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *IdempotencyRecordMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *IdempotencyRecordMutation) ClearField(name string) error {
+	switch name {
+	case idempotencyrecord.FieldResponseBody:
+		m.ClearResponseBody()
+		return nil
+	}
+	return fmt.Errorf("unknown IdempotencyRecord nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *IdempotencyRecordMutation) ResetField(name string) error {
+	switch name {
+	case idempotencyrecord.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case idempotencyrecord.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case idempotencyrecord.FieldOperation:
+		m.ResetOperation()
+		return nil
+	case idempotencyrecord.FieldScope:
+		m.ResetScope()
+		return nil
+	case idempotencyrecord.FieldKey:
+		m.ResetKey()
+		return nil
+	case idempotencyrecord.FieldRequestHash:
+		m.ResetRequestHash()
+		return nil
+	case idempotencyrecord.FieldStatusCode:
+		m.ResetStatusCode()
+		return nil
+	case idempotencyrecord.FieldResponseBody:
+		m.ResetResponseBody()
+		return nil
+	case idempotencyrecord.FieldExpiresAt:
+		m.ResetExpiresAt()
+		return nil
+	}
+	return fmt.Errorf("unknown IdempotencyRecord field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *IdempotencyRecordMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *IdempotencyRecordMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *IdempotencyRecordMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *IdempotencyRecordMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *IdempotencyRecordMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *IdempotencyRecordMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *IdempotencyRecordMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown IdempotencyRecord unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *IdempotencyRecordMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown IdempotencyRecord edge %s", name)
 }
