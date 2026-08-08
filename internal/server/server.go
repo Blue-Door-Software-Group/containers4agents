@@ -32,10 +32,19 @@ func New(cfg config.Config, logger *slog.Logger, handler http.Handler) *Server {
 	}
 }
 
-func NewHandler(m *metrics.Metrics) http.Handler {
+func NewHandler(
+	m *metrics.Metrics,
+	authMw func(http.Handler) http.Handler,
+	containerHandler *handlers.ContainerHandler,
+) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /healthz", m.Middleware("/healthz", http.HandlerFunc(handlers.Health)))
 	mux.Handle("GET /metrics", m.Handler())
+	if authMw != nil && containerHandler != nil {
+		mux.Handle("POST /v1/containers", m.Middleware("/v1/containers:create", authMw(http.HandlerFunc(containerHandler.Create))))
+		mux.Handle("GET /v1/containers/{id}", m.Middleware("/v1/containers:get", authMw(http.HandlerFunc(containerHandler.GetStatus))))
+		mux.Handle("POST /v1/containers/{id}/stop", m.Middleware("/v1/containers:stop", authMw(http.HandlerFunc(containerHandler.Stop))))
+	}
 	mux.Handle("/", m.Middleware("/*", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestID := middleware.GetRequestID(r.Context())
 		apierrors.Write(w, requestID, apierrors.NotFound("resource not found"))

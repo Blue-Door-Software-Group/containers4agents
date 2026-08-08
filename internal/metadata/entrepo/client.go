@@ -8,6 +8,7 @@ import (
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/Blue-Door-Software-Group/containers4agents/ent"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/config"
+	_ "github.com/lib/pq"
 )
 
 type Client struct {

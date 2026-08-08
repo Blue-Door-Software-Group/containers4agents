@@ -6,6 +6,7 @@ type SandboxSpec struct {
 	ExternalID   string
 	Profile      string
 	ImageVersion string
+	Image        string
 }
 
 type ProviderContainer struct {

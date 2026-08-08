@@ -51,3 +51,30 @@ func NotFound(message string) APIError {
 		Retryable: false,
 	}
 }
+
+func Unauthorized(message string) APIError {
+	return APIError{
+		Code:      "unauthorized",
+		Message:   message,
+		Status:    http.StatusUnauthorized,
+		Retryable: false,
+	}
+}
+
+func Conflict(message string) APIError {
+	return APIError{
+		Code:      "state_conflict",
+		Message:   message,
+		Status:    http.StatusConflict,
+		Retryable: false,
+	}
+}
+
+func BadRequest(message string) APIError {
+	return APIError{
+		Code:      "bad_request",
+		Message:   message,
+		Status:    http.StatusBadRequest,
+		Retryable: false,
+	}
+}

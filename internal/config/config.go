@@ -9,19 +9,29 @@ import (
 )
 
 type Config struct {
-	HTTPListenAddr  string
-	LogLevel        string
-	DBDriver        string
-	DBDSN           string
-	AutoMigrate     bool
-	StartupTimeout  time.Duration
-	ShutdownTimeout time.Duration
-	ReadTimeout     time.Duration
-	WriteTimeout    time.Duration
-	IdleTimeout     time.Duration
+	HTTPListenAddr     string
+	LogLevel           string
+	DevMode            bool
+	APIKey             string
+	DBDriver           string
+	DBDSN              string
+	AutoMigrate        bool
+	StartupTimeout     time.Duration
+	ShutdownTimeout    time.Duration
+	DefaultProfile     string
+	ActiveImageVersion string
+	DockerImage        string
+	DockerHost         string
+	ReadTimeout        time.Duration
+	WriteTimeout       time.Duration
+	IdleTimeout        time.Duration
 }
 
 func Load() (Config, error) {
+	devMode, err := getEnvBool("DEV_MODE", false)
+	if err != nil {
+		return Config{}, err
+	}
 	autoMigrate, err := getEnvBool("AUTO_MIGRATE", false)
 	if err != nil {
 		return Config{}, err
@@ -36,16 +46,22 @@ func Load() (Config, error) {
 	}
 
 	cfg := Config{
-		HTTPListenAddr:  getEnvOrDefault("C4A_HTTP_LISTEN_ADDR", ":8080"),
-		LogLevel:        strings.ToLower(getEnvOrDefault("C4A_LOG_LEVEL", "info")),
-		DBDriver:        strings.ToLower(getEnvOrDefault("C4A_DB_DRIVER", "postgres")),
-		DBDSN:           strings.TrimSpace(os.Getenv("C4A_DB_DSN")),
-		AutoMigrate:     autoMigrate,
-		StartupTimeout:  startupTimeout,
-		ShutdownTimeout: shutdownTimeout,
-		ReadTimeout:     10 * time.Second,
-		WriteTimeout:    30 * time.Second,
-		IdleTimeout:     60 * time.Second,
+		HTTPListenAddr:     getEnvOrDefault("C4A_HTTP_LISTEN_ADDR", ":8080"),
+		LogLevel:           strings.ToLower(getEnvOrDefault("C4A_LOG_LEVEL", "info")),
+		DevMode:            devMode,
+		APIKey:             strings.TrimSpace(os.Getenv("CONTAINERS4AGENTS_API_KEY")),
+		DBDriver:           strings.ToLower(getEnvOrDefault("C4A_DB_DRIVER", "postgres")),
+		DBDSN:              strings.TrimSpace(os.Getenv("C4A_DB_DSN")),
+		AutoMigrate:        autoMigrate,
+		StartupTimeout:     startupTimeout,
+		ShutdownTimeout:    shutdownTimeout,
+		DefaultProfile:     strings.TrimSpace(getEnvOrDefault("C4A_DEFAULT_PROFILE", "prod-strict")),
+		ActiveImageVersion: strings.TrimSpace(getEnvOrDefault("C4A_ACTIVE_IMAGE_VERSION", "v1")),
+		DockerImage:        strings.TrimSpace(getEnvOrDefault("C4A_DOCKER_IMAGE", "alpine:3.20")),
+		DockerHost:         strings.TrimSpace(os.Getenv("C4A_DOCKER_HOST")),
+		ReadTimeout:        10 * time.Second,
+		WriteTimeout:       30 * time.Second,
+		IdleTimeout:        60 * time.Second,
 	}
 
 	if cfg.HTTPListenAddr == "" {
@@ -56,6 +72,18 @@ func Load() (Config, error) {
 	}
 	if cfg.DBDSN == "" {
 		return Config{}, fmt.Errorf("C4A_DB_DSN is required")
+	}
+	if cfg.DefaultProfile == "" {
+		return Config{}, fmt.Errorf("C4A_DEFAULT_PROFILE must not be empty")
+	}
+	if cfg.ActiveImageVersion == "" {
+		return Config{}, fmt.Errorf("C4A_ACTIVE_IMAGE_VERSION must not be empty")
+	}
+	if cfg.DockerImage == "" {
+		return Config{}, fmt.Errorf("C4A_DOCKER_IMAGE must not be empty")
+	}
+	if !cfg.DevMode && cfg.APIKey == "" {
+		return Config{}, fmt.Errorf("CONTAINERS4AGENTS_API_KEY is required when DEV_MODE is false")
 	}
 
 	switch cfg.LogLevel {

@@ -8,11 +8,17 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/Blue-Door-Software-Group/containers4agents/internal/api/handlers"
+	"github.com/Blue-Door-Software-Group/containers4agents/internal/api/middleware"
+	"github.com/Blue-Door-Software-Group/containers4agents/internal/auth"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/config"
+	"github.com/Blue-Door-Software-Group/containers4agents/internal/lifecycle"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/metadata/entrepo"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/metadata/migrations"
+	"github.com/Blue-Door-Software-Group/containers4agents/internal/metadata/repository"
 	obslog "github.com/Blue-Door-Software-Group/containers4agents/internal/observability/logging"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/observability/metrics"
+	"github.com/Blue-Door-Software-Group/containers4agents/internal/provider/docker"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/server"
 )
 
@@ -53,8 +59,31 @@ func run() error {
 		return fmt.Errorf("run migrations: %w", err)
 	}
 
+	keyManager, err := auth.NewKeyManager(cfg.APIKey, cfg.DevMode)
+	if err != nil {
+		return fmt.Errorf("initialize auth key manager: %w", err)
+	}
+	if keyManager.Generated() {
+		logger.Info("generated API key for this process", "api_key", keyManager.APIKey())
+	}
+
+	dockerProvider, err := docker.New(cfg.DockerHost)
+	if err != nil {
+		return fmt.Errorf("initialize docker provider: %w", err)
+	}
+	defer func() {
+		if closeErr := dockerProvider.Close(); closeErr != nil {
+			logger.Error("failed to close docker provider", "error", closeErr)
+		}
+	}()
+
+	containerRepo := repository.NewEntContainerRepository(repoClient.Ent)
+	lifecycleSvc := lifecycle.NewService(containerRepo, dockerProvider, cfg)
+	containerHandler := handlers.NewContainerHandler(lifecycleSvc)
+	authMw := middleware.Auth(keyManager)
+
 	metricsRegistry := metrics.New()
-	handler := server.NewHandler(metricsRegistry)
+	handler := server.NewHandler(metricsRegistry, authMw, containerHandler)
 	apiServer := server.New(cfg, logger, handler)
 
 	signalCh := make(chan os.Signal, 1)
