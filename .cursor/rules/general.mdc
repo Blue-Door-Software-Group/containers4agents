@@ -1,0 +1,36 @@
+---
+description: containers4agents core engineering and safety standards
+alwaysApply: true
+---
+
+# General Standards
+
+## Project focus
+
+- Build a provider-agnostic container runtime control plane, not model-specific orchestration.
+- Keep v1 decisions aligned with `REQUIREMENTS.md`, `ARCHITECTURE.md`, and `docs/ADR_BACKLOG.md`.
+- Prefer minimal, secure defaults over convenience shortcuts.
+
+## Scope discipline
+
+- Implement only the requested change and avoid unrelated refactors.
+- Do not leak Docker-specific semantics into client-facing behavior.
+- Keep security, isolation, and lifecycle guarantees intact when modifying code.
+
+## Go engineering expectations
+
+- Keep `cmd/` as composition root and `internal/` packages as domain boundaries.
+- Favor explicit interfaces, deterministic behavior, and clear error handling.
+- Add tests for changed behavior; do not weaken tests to make a change pass.
+
+## Security and safety baseline
+
+- Assume sandbox workloads are untrusted.
+- Do not introduce network access for agent containers unless requirements change explicitly.
+- Never log secrets, command bodies, stdout/stderr payloads, or file contents.
+
+## Change checklist
+
+- When changing runtime behavior, verify impacts to architecture docs and ADRs.
+- When changing API behavior, update contract docs and examples.
+- Treat documentation updates as part of done, not a follow-up task.

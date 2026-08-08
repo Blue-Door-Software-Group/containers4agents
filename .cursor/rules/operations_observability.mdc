@@ -1,0 +1,37 @@
+---
+description: Reliability, reconciliation, and observability rules
+globs: internal/observability/**/*.go,internal/reconcile/**/*.go,internal/lifecycle/**/*.go,deployments/**/*
+alwaysApply: false
+---
+
+# Operations and Observability Rules
+
+## Reliability ownership
+
+- Persist lifecycle deadlines, retries, and state transitions in metadata storage.
+- Do not rely on in-memory-only timers for stop/prune/reconcile workflows.
+- Make reconcile paths idempotent and safe to run on startup and interval.
+
+## Reconciliation and retries
+
+- Startup must reconcile control-plane metadata with provider reality.
+- Failed prune/delete operations should enter explicit retry flow with bounded backoff.
+- Emit metrics for drift detection, retries, and final failure counts.
+
+## Logging constraints
+
+- Emit metadata-only structured logs.
+- Never log command content, stdout/stderr, file contents, API keys, or auth headers.
+- Sanitize provider errors before exposing or storing.
+
+## Metrics baseline
+
+- Track request latency and status classes.
+- Track lifecycle transitions (`create`, `start`, `stop`, `prune`) and failures.
+- Track execution outcomes (`timeout`, `oom`, quota violations, internal errors).
+- Track capacity actions (reclamation attempts and admission rejects).
+
+## Change checklist
+
+- If lifecycle or reconcile semantics change, update architecture docs and ADRs.
+- If new behavior is operationally critical, add metric and alerting considerations.

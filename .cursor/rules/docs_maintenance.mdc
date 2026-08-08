@@ -1,0 +1,40 @@
+---
+description: Strict documentation maintenance and definition-of-done requirements
+globs: **/*.md,cmd/**/*.go,internal/**/*.go,docs/**/*.md
+alwaysApply: false
+---
+
+# Documentation Maintenance Rules
+
+## Definition of done
+
+- Documentation updates are required in the same change when behavior, contracts, or operations change.
+- Do not defer doc updates to a later task unless explicitly approved.
+
+## Go package documentation
+
+- Every exported Go type, function, method, and package must have doc comments.
+- Keep package-level docs and README content aligned with current behavior and boundaries.
+- When adding a new package, include concise purpose and usage documentation.
+
+## Architecture and ADR synchronization
+
+- Update `ARCHITECTURE.md` when component boundaries, flows, lifecycle, or deployment assumptions change.
+- Update `docs/ADR_BACKLOG.md` when an architectural decision is added, removed, or materially revised.
+- If requirements interpretation changes, document that change explicitly in related docs.
+
+## API and contract documentation
+
+- Update API docs/spec when endpoints, payloads, status taxonomy, error envelopes, or idempotency behavior change.
+- Ensure examples and request/response narratives remain accurate after behavior changes.
+
+## Operational documentation
+
+- Update deployment docs when runtime configuration, Docker/Portainer topology, or security posture changes.
+- Document new required environment variables, limits, and migration steps.
+
+## Change checklist
+
+- Changed code behavior: update nearby package docs/README.
+- Changed API behavior: update API docs/spec and contract notes.
+- Changed architecture/ops guarantees: update `ARCHITECTURE.md` and ADRs.

@@ -1,0 +1,36 @@
+---
+description: Docker provider adapter and deployment hardening rules
+globs: internal/provider/**/*.go,internal/provider/docker/**/*.go,deployments/docker/**/*,**/compose*.yml,**/compose*.yaml
+alwaysApply: false
+---
+
+# Provider Docker Rules
+
+## Provider boundary
+
+- Keep Docker concerns behind provider interfaces and adapter types.
+- Map Docker/container-runtime errors into normalized control-plane errors.
+- Do not expose Docker IDs, mount paths, or network names through public API models.
+
+## Sandbox hardening requirements
+
+- Run agent workloads as non-root with minimal capabilities.
+- Enforce network isolation for agent containers (no inbound/outbound access).
+- Restrict writable filesystem scope to workspace and bounded temp paths.
+
+## Deployment and Portainer constraints
+
+- Use internal network-only service communication by default.
+- Route external access through Caddy TLS edge policy, not direct container port exposure.
+- Treat Docker daemon access as privileged; use least-privilege endpoint approach where possible.
+
+## Compose/deployment hygiene
+
+- Keep environment variables explicit and minimal.
+- Use immutable image tags for controlled promotion when possible.
+- Include health/metrics exposure patterns consistent with lab monitoring stack.
+
+## Change checklist
+
+- If provider behavior changes, verify API contract remains provider-agnostic.
+- If Docker access model changes, update ADRs and deployment docs in the same change.

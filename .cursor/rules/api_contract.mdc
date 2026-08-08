@@ -1,0 +1,35 @@
+---
+description: API contract and behavior consistency rules
+globs: internal/server/**/*.go,internal/api/**/*.go,openapi*.yaml,openapi*.yml,**/*openapi*.yaml,**/*openapi*.yml
+alwaysApply: false
+---
+
+# API Contract Rules
+
+## Contract stability
+
+- Keep client-facing API provider-agnostic; do not expose Docker identifiers or daemon-specific errors.
+- Preserve lifecycle and execution semantics defined in requirements unless a contract change is intentional.
+- Prefer additive API evolution over breaking changes.
+
+## Error and response semantics
+
+- Use structured error envelopes with machine code, message, request ID, and retryability.
+- Return conflict-class responses for invalid lifecycle state transitions.
+- Keep command outcome taxonomy consistent (`ok`, `user_error`, `timeout`, `oom`, `disk_quota`, `sandbox_violation`, `killed`, `internal_error`).
+
+## Request correlation and observability
+
+- Propagate request IDs across API logs and error responses.
+- Keep logs metadata-only; never include sensitive payload content.
+- Ensure API-level metrics cover status classes and latency.
+
+## Idempotency and retries
+
+- Lifecycle and file-mutating operations must have clear retry behavior.
+- When idempotency semantics are introduced or changed, update docs and tests together.
+
+## Change checklist
+
+- If endpoint behavior/payload/status changes, update API docs/spec in the same change.
+- If lifecycle semantics change, update `ARCHITECTURE.md` and ADR backlog entries.

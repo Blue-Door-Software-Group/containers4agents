@@ -1,0 +1,37 @@
+---
+description: Control-plane package boundaries and dependency direction
+globs: cmd/**/*.go,internal/**/*.go
+alwaysApply: false
+---
+
+# Core Architecture Rules
+
+## Boundary separation
+
+- Keep API transport concerns in server/api packages.
+- Keep lifecycle state transitions centralized in lifecycle domain code.
+- Keep execution and file operations in dedicated services, not mixed into handlers.
+- Keep provider-specific logic inside provider adapters only.
+
+## Dependency direction
+
+- HTTP handlers depend on service interfaces, not concrete provider implementations.
+- Lifecycle, execution, and file services may depend on provider ports and metadata ports.
+- Provider adapters must not import HTTP layer models or handler packages.
+
+## Lifecycle authority
+
+- Lifecycle transitions must be explicit and validated (`creating`, `running`, `stopped`, `pruned`, etc.).
+- Do not add hidden transitions (for example implicit auto-resume) without ADR and contract updates.
+- Polling/status reads must not mutate activity state by default.
+
+## Capacity and reconciliation
+
+- Capacity decisions and reclamation policy belong to capacity/lifecycle domains.
+- Reconciliation logic should be reusable for startup and periodic correction paths.
+- Timer/retry state must be persisted; do not rely on in-memory-only scheduling.
+
+## Change checklist
+
+- When adding a new package, define its boundary and owner responsibilities.
+- When changing service interfaces, update architecture docs and dependent rules/docs.
