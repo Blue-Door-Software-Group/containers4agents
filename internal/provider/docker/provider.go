@@ -6,24 +6,49 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/client"
+	"github.com/docker/docker/errdefs"
+	"github.com/docker/docker/pkg/stdcopy"
 
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/provider/types"
 )
 
 type Provider struct {
 	host string
+	cli  *client.Client
 }
 
 func New(host string) (*Provider, error) {
-	if _, err := exec.LookPath("docker"); err != nil {
+	opts := []client.Opt{
+		client.FromEnv,
+		client.WithAPIVersionNegotiation(),
+	}
+	if strings.TrimSpace(host) != "" {
+		opts = append(opts, client.WithHost(host))
+	}
+
+	cli, err := client.NewClientWithOpts(opts...)
+	if err != nil {
 		return nil, types.ErrProviderUnavailable
 	}
-	return &Provider{host: host}, nil
+
+	pingCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := cli.Ping(pingCtx); err != nil {
+		_ = cli.Close()
+		return nil, types.ErrProviderUnavailable
+	}
+
+	return &Provider{
+		host: host,
+		cli:  cli,
+	}, nil
 }
 
 func (p *Provider) CreateSandbox(ctx context.Context, spec types.SandboxSpec) (types.ProviderContainer, error) {
@@ -31,53 +56,64 @@ func (p *Provider) CreateSandbox(ctx context.Context, spec types.SandboxSpec) (t
 		return types.ProviderContainer{}, err
 	}
 
-	createArgs := []string{
-		"create",
-		"--network", "none",
-		"-w", "/workspace",
-		"--label", "c4a.external_id=" + spec.ExternalID,
-		"--label", "c4a.profile=" + spec.Profile,
-		"--label", "c4a.image_version=" + spec.ImageVersion,
+	cfg := &container.Config{
+		Image:      spec.Image,
+		WorkingDir: "/workspace",
+		Labels: map[string]string{
+			"c4a.external_id":   spec.ExternalID,
+			"c4a.profile":       spec.Profile,
+			"c4a.image_version": spec.ImageVersion,
+		},
+		Cmd: []string{"sh", "-lc", "mkdir -p /workspace && chmod 0777 /workspace && sleep infinity"},
 	}
-	if spec.Runtime.CPUMaxCores > 0 {
-		createArgs = append(createArgs, "--cpus", fmt.Sprintf("%.2f", spec.Runtime.CPUMaxCores))
+
+	hostCfg := &container.HostConfig{
+		NetworkMode: container.NetworkMode("none"),
+		Resources: container.Resources{
+			Memory:     spec.Runtime.MemoryMaxBytes,
+			MemorySwap: spec.Runtime.MemoryMaxBytes,
+			NanoCPUs:   int64(spec.Runtime.CPUMaxCores * 1_000_000_000),
+		},
+		CapDrop:         []string{},
+		SecurityOpt:     []string{},
+		ReadonlyRootfs:  spec.Runtime.ReadOnlyRootFS,
+		PublishAllPorts: false,
+		Privileged:      false,
+		AutoRemove:      false,
+		RestartPolicy:   container.RestartPolicy{Name: "no"},
 	}
-	if spec.Runtime.MemoryMaxBytes > 0 {
-		createArgs = append(createArgs, "--memory", strconv.FormatInt(spec.Runtime.MemoryMaxBytes, 10), "--memory-swap", strconv.FormatInt(spec.Runtime.MemoryMaxBytes, 10))
+	if spec.Runtime.MemoryMaxBytes <= 0 {
+		hostCfg.Resources.Memory = 0
+		hostCfg.Resources.MemorySwap = 0
+	}
+	if spec.Runtime.CPUMaxCores <= 0 {
+		hostCfg.Resources.NanoCPUs = 0
 	}
 	if spec.Runtime.PIDsMax > 0 {
-		createArgs = append(createArgs, "--pids-limit", strconv.Itoa(spec.Runtime.PIDsMax))
+		pids := int64(spec.Runtime.PIDsMax)
+		hostCfg.Resources.PidsLimit = &pids
 	}
 	if spec.Runtime.DropAllCapabilities {
-		createArgs = append(createArgs, "--cap-drop", "ALL")
+		hostCfg.CapDrop = append(hostCfg.CapDrop, "ALL")
 	}
 	if spec.Runtime.NoNewPrivileges {
-		createArgs = append(createArgs, "--security-opt", "no-new-privileges")
+		hostCfg.SecurityOpt = append(hostCfg.SecurityOpt, "no-new-privileges")
 	}
 	if spec.Runtime.SeccompProfilePath != "" {
-		createArgs = append(createArgs, "--security-opt", "seccomp="+spec.Runtime.SeccompProfilePath)
-	}
-	if spec.Runtime.ReadOnlyRootFS {
-		createArgs = append(createArgs, "--read-only")
+		hostCfg.SecurityOpt = append(hostCfg.SecurityOpt, "seccomp="+spec.Runtime.SeccompProfilePath)
 	}
 	if spec.Runtime.TmpDiskMaxBytes > 0 {
-		createArgs = append(createArgs, "--tmpfs", fmt.Sprintf("/tmp:rw,noexec,nosuid,size=%d", spec.Runtime.TmpDiskMaxBytes))
+		hostCfg.Tmpfs = map[string]string{
+			"/tmp": fmt.Sprintf("rw,noexec,nosuid,size=%d", spec.Runtime.TmpDiskMaxBytes),
+		}
 	}
 
-	createArgs = append(createArgs,
-		spec.Image,
-		"sh", "-lc", "mkdir -p /workspace && chmod 0777 /workspace && sleep infinity",
-	)
-
-	containerID, err := p.runDocker(
-		ctx, createArgs...,
-	)
+	created, err := p.cli.ContainerCreate(ctx, cfg, hostCfg, nil, nil, "")
 	if err != nil {
 		return types.ProviderContainer{}, mapDockerErr(err)
 	}
-
-	containerID = strings.TrimSpace(containerID)
-	if _, err := p.runDocker(ctx, "start", containerID); err != nil {
+	containerID := strings.TrimSpace(created.ID)
+	if err := p.cli.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
 		return types.ProviderContainer{}, mapDockerErr(err)
 	}
 
@@ -88,21 +124,22 @@ func (p *Provider) CreateSandbox(ctx context.Context, spec types.SandboxSpec) (t
 }
 
 func (p *Provider) StartSandbox(ctx context.Context, providerRef string) error {
-	if _, err := p.runDocker(ctx, "start", providerRef); err != nil {
+	if err := p.cli.ContainerStart(ctx, providerRef, container.StartOptions{}); err != nil {
 		return mapDockerErr(err)
 	}
 	return nil
 }
 
 func (p *Provider) StopSandbox(ctx context.Context, providerRef string) error {
-	if _, err := p.runDocker(ctx, "stop", "--time", "10", providerRef); err != nil {
+	timeout := 10
+	if err := p.cli.ContainerStop(ctx, providerRef, container.StopOptions{Timeout: &timeout}); err != nil {
 		return mapDockerErr(err)
 	}
 	return nil
 }
 
 func (p *Provider) PruneSandbox(ctx context.Context, providerRef string) error {
-	if _, err := p.runDocker(ctx, "rm", "-f", providerRef); err != nil {
+	if err := p.cli.ContainerRemove(ctx, providerRef, container.RemoveOptions{Force: true}); err != nil {
 		return mapDockerErr(err)
 	}
 	return nil
@@ -127,14 +164,7 @@ func (p *Provider) Exec(ctx context.Context, providerRef string, req types.ExecR
 	args = append(args, providerRef)
 	args = append(args, req.Command...)
 
-	command := exec.CommandContext(ctx, "docker", args...)
-	if p.host != "" {
-		command.Env = append(os.Environ(), "DOCKER_HOST="+p.host)
-	}
-	command.Stdout = stdoutBuffer
-	command.Stderr = stderrBuffer
-
-	err := command.Run()
+	exitCode, err := p.runExec(ctx, providerRef, args, req.User, nil, stdoutBuffer, stderrBuffer)
 	result := types.ExecResult{
 		Stdout:       stdoutBuffer.String(),
 		Stderr:       stderrBuffer.String(),
@@ -146,22 +176,18 @@ func (p *Provider) Exec(ctx context.Context, providerRef string, req types.ExecR
 		result.Status = "timeout"
 		return result, nil
 	}
-	if err == nil {
+	if err != nil {
+		return types.ExecResult{}, mapDockerErr(err)
+	}
+	if exitCode == 0 {
 		exitCode := 0
 		result.Status = "ok"
 		result.ExitCode = &exitCode
 		return result, nil
 	}
-
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		exitCode := exitErr.ExitCode()
-		result.ExitCode = &exitCode
-		result.Status = mapExecExitStatus(result.Stderr, exitCode)
-		return result, nil
-	}
-
-	return types.ExecResult{}, mapDockerErr(fmt.Errorf("docker %s: %w", strings.Join(args, " "), err))
+	result.ExitCode = &exitCode
+	result.Status = mapExecExitStatus(result.Stderr, exitCode)
+	return result, nil
 }
 
 func mapExecExitStatus(stderr string, exitCode int) string {
@@ -204,9 +230,18 @@ func (p *Provider) UploadFile(ctx context.Context, providerRef string, path stri
 		`cat > "$final"`,
 	}, "; ")
 
-	_, stderr, err := p.runDockerCommand(ctx, content, nil, false, "exec", "-i", providerRef, "sh", "-lc", script, "--", path)
-	if err != nil {
-		return p.mapFileOpErr(err, stderr, "upload", path)
+	stderrBuffer := newLimitedBuffer(16 * 1024)
+	if err := p.runFileScript(
+		ctx,
+		providerRef,
+		[]string{"sh", "-lc", script, "--", path},
+		content,
+		io.Discard,
+		stderrBuffer,
+		"upload",
+		path,
+	); err != nil {
+		return err
 	}
 	return nil
 }
@@ -233,9 +268,18 @@ func (p *Provider) DownloadFile(ctx context.Context, providerRef string, path st
 		`cat "$resolved"`,
 	}, "; ")
 
-	_, stderr, err := p.runDockerCommand(ctx, nil, dst, false, "exec", providerRef, "sh", "-lc", script, "--", path)
-	if err != nil {
-		return p.mapFileOpErr(err, stderr, "download", path)
+	stderrBuffer := newLimitedBuffer(16 * 1024)
+	if err := p.runFileScript(
+		ctx,
+		providerRef,
+		[]string{"sh", "-lc", script, "--", path},
+		nil,
+		dst,
+		stderrBuffer,
+		"download",
+		path,
+	); err != nil {
+		return err
 	}
 	return nil
 }
@@ -259,9 +303,18 @@ func (p *Provider) DeletePath(ctx context.Context, providerRef string, path stri
 		`rm -rf -- "$resolved"`,
 	}, "; ")
 
-	_, stderr, err := p.runDockerCommand(ctx, nil, nil, false, "exec", providerRef, "sh", "-lc", script, "--", path)
-	if err != nil {
-		return p.mapFileOpErr(err, stderr, "delete", path)
+	stderrBuffer := newLimitedBuffer(16 * 1024)
+	if err := p.runFileScript(
+		ctx,
+		providerRef,
+		[]string{"sh", "-lc", script, "--", path},
+		nil,
+		io.Discard,
+		stderrBuffer,
+		"delete",
+		path,
+	); err != nil {
+		return err
 	}
 	return nil
 }
@@ -290,12 +343,22 @@ func (p *Provider) ListWorkspace(ctx context.Context, providerRef string) ([]typ
 		`done`,
 	}, "; ")
 
-	stdout, stderr, err := p.runDockerCommand(ctx, nil, nil, true, "exec", providerRef, "sh", "-lc", script)
-	if err != nil {
-		return nil, p.mapFileOpErr(err, stderr, "manifest", "")
+	stdoutBuffer := &bytes.Buffer{}
+	stderrBuffer := newLimitedBuffer(16 * 1024)
+	if err := p.runFileScript(
+		ctx,
+		providerRef,
+		[]string{"sh", "-lc", script},
+		nil,
+		stdoutBuffer,
+		stderrBuffer,
+		"manifest",
+		"",
+	); err != nil {
+		return nil, err
 	}
 
-	text := strings.TrimSpace(string(stdout))
+	text := strings.TrimSpace(stdoutBuffer.String())
 	if text == "" {
 		return []types.FileEntry{}, nil
 	}
@@ -351,14 +414,24 @@ func (p *Provider) ReadUsage(ctx context.Context, providerRef string) (types.Usa
 		`printf '%s\t%s\n' "$bytes" "$count"`,
 	}, "; ")
 
-	stdout, stderr, err := p.runDockerCommand(ctx, nil, nil, true, "exec", providerRef, "sh", "-lc", script)
-	if err != nil {
-		return types.UsageSnapshot{}, p.mapFileOpErr(err, stderr, "usage", "")
+	stdoutBuffer := &bytes.Buffer{}
+	stderrBuffer := newLimitedBuffer(16 * 1024)
+	if err := p.runFileScript(
+		ctx,
+		providerRef,
+		[]string{"sh", "-lc", script},
+		nil,
+		stdoutBuffer,
+		stderrBuffer,
+		"usage",
+		"",
+	); err != nil {
+		return types.UsageSnapshot{}, err
 	}
 
-	parts := strings.Split(strings.TrimSpace(string(stdout)), "\t")
+	parts := strings.Split(strings.TrimSpace(stdoutBuffer.String()), "\t")
 	if len(parts) != 2 {
-		return types.UsageSnapshot{}, fmt.Errorf("%w: malformed usage output %q", types.ErrProviderInternal, strings.TrimSpace(string(stdout)))
+		return types.UsageSnapshot{}, fmt.Errorf("%w: malformed usage output %q", types.ErrProviderInternal, strings.TrimSpace(stdoutBuffer.String()))
 	}
 
 	bytesUsed, parseErr := strconv.ParseInt(parts[0], 10, 64)
@@ -377,25 +450,29 @@ func (p *Provider) ReadUsage(ctx context.Context, providerRef string) (types.Usa
 }
 
 func (p *Provider) State(ctx context.Context, providerRef string) (string, error) {
-	out, err := p.runDocker(ctx, "inspect", "-f", "{{.State.Running}}", providerRef)
+	inspect, err := p.cli.ContainerInspect(ctx, providerRef)
 	if err != nil {
 		return "", mapDockerErr(err)
 	}
-	switch strings.TrimSpace(out) {
-	case "true":
-		return "running", nil
-	case "false":
-		return "stopped", nil
-	default:
+	if inspect.State == nil {
 		return "", types.ErrProviderInternal
 	}
+	switch inspect.State.Running {
+	case true:
+		return "running", nil
+	case false:
+		return "stopped", nil
+	}
+	return "", types.ErrProviderInternal
 }
 
 func (p *Provider) ensureImage(ctx context.Context, imageRef string) error {
-	_, err := p.runDocker(ctx, "pull", imageRef)
+	reader, err := p.cli.ImagePull(ctx, imageRef, image.PullOptions{})
 	if err != nil {
 		return mapDockerErr(err)
 	}
+	defer reader.Close()
+	_, _ = io.Copy(io.Discard, reader)
 	return nil
 }
 
@@ -403,84 +480,40 @@ func mapDockerErr(err error) error {
 	if err == nil {
 		return nil
 	}
+	message := strings.ToLower(strings.TrimSpace(err.Error()))
 	switch {
-	case strings.Contains(err.Error(), "No such container"):
-		return types.ErrProviderNotFound
-	case strings.Contains(err.Error(), "Cannot connect to the Docker daemon"):
-		return types.ErrProviderUnavailable
 	case errors.Is(err, context.DeadlineExceeded):
 		return types.ErrProviderTimeout
+	case errdefs.IsNotFound(err):
+		return types.ErrProviderNotFound
+	case errdefs.IsUnavailable(err), errdefs.IsSystem(err):
+		return types.ErrProviderUnavailable
+	case errdefs.IsConflict(err):
+		return types.ErrProviderConflict
+	case errdefs.IsForbidden(err), errdefs.IsUnauthorized(err):
+		return types.ErrProviderDenied
+	case strings.Contains(message, "cannot connect to the docker daemon"),
+		strings.Contains(message, "error during connect"),
+		strings.Contains(message, "is the docker daemon running"),
+		strings.Contains(message, "connection refused"),
+		strings.Contains(message, "no such host"):
+		// Preserve provider-unavailable semantics for untyped connectivity errors.
+		return types.ErrProviderUnavailable
 	default:
 		return fmt.Errorf("%w: %v", types.ErrProviderInternal, err)
 	}
 }
 
 func (p *Provider) Close() error {
-	return nil
-}
-
-func (p *Provider) runDocker(ctx context.Context, args ...string) (string, error) {
-	command := exec.CommandContext(ctx, "docker", args...)
-	if p.host != "" {
-		command.Env = append(os.Environ(), "DOCKER_HOST="+p.host)
+	if p == nil || p.cli == nil {
+		return nil
 	}
-	out, err := command.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("docker %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
-	}
-	return string(out), nil
-}
-
-func (p *Provider) runDockerCommand(
-	ctx context.Context,
-	stdin io.Reader,
-	stdout io.Writer,
-	captureStdout bool,
-	args ...string,
-) ([]byte, string, error) {
-	command := exec.CommandContext(ctx, "docker", args...)
-	if p.host != "" {
-		command.Env = append(os.Environ(), "DOCKER_HOST="+p.host)
-	}
-	if stdin != nil {
-		command.Stdin = stdin
-	}
-
-	var stdoutBuffer bytes.Buffer
-	var stderr bytes.Buffer
-
-	switch {
-	case stdout != nil && captureStdout:
-		command.Stdout = io.MultiWriter(stdout, &stdoutBuffer)
-	case stdout != nil:
-		command.Stdout = stdout
-	case captureStdout:
-		command.Stdout = &stdoutBuffer
-	default:
-		command.Stdout = io.Discard
-	}
-	command.Stderr = &stderr
-
-	err := command.Run()
-	if !captureStdout {
-		return nil, strings.TrimSpace(stderr.String()), err
-	}
-	return stdoutBuffer.Bytes(), strings.TrimSpace(stderr.String()), err
+	return p.cli.Close()
 }
 
 func (p *Provider) mapFileOpErr(err error, stderr string, operation string, path string) error {
 	if err == nil {
 		return nil
-	}
-	if code, ok := dockerExitCode(err); ok {
-		switch code {
-		case 42:
-			return types.ErrProviderDenied
-		case 44:
-			return types.ErrProviderNotFound
-		case 45:
-			return types.ErrProviderDenied
-		}
 	}
 
 	message := strings.TrimSpace(stderr)
@@ -488,9 +521,9 @@ func (p *Provider) mapFileOpErr(err error, stderr string, operation string, path
 		message = err.Error()
 	}
 	switch {
-	case strings.Contains(message, "No such container"):
+	case errdefs.IsNotFound(err):
 		return types.ErrProviderNotFound
-	case strings.Contains(message, "Cannot connect to the Docker daemon"):
+	case errdefs.IsUnavailable(err), errdefs.IsSystem(err):
 		return types.ErrProviderUnavailable
 	case strings.Contains(strings.ToLower(message), "no space left on device"), strings.Contains(strings.ToLower(message), "disk quota exceeded"):
 		return types.ErrProviderQuotaExceeded
@@ -504,12 +537,21 @@ func (p *Provider) mapFileOpErr(err error, stderr string, operation string, path
 	}
 }
 
-func dockerExitCode(err error) (int, bool) {
-	var exitErr *exec.ExitError
-	if !errors.As(err, &exitErr) {
-		return 0, false
+func (p *Provider) mapFileExitCode(code int, stderr string, operation string, filePath string) error {
+	switch code {
+	case 42, 45:
+		return types.ErrProviderDenied
+	case 44:
+		return types.ErrProviderNotFound
 	}
-	return exitErr.ExitCode(), true
+	message := strings.TrimSpace(stderr)
+	if message == "" {
+		message = fmt.Sprintf("operation %s failed with exit code %d", operation, code)
+	}
+	if filePath != "" {
+		return fmt.Errorf("%w: %s %s: %s", types.ErrProviderInternal, operation, filePath, message)
+	}
+	return fmt.Errorf("%w: %s: %s", types.ErrProviderInternal, operation, message)
 }
 
 var _ types.ContainerProvider = (*Provider)(nil)
@@ -557,3 +599,87 @@ func (b *limitedBuffer) Truncated() bool {
 }
 
 var _ io.Writer = (*limitedBuffer)(nil)
+
+func (p *Provider) runExec(
+	ctx context.Context,
+	providerRef string,
+	cmd []string,
+	user string,
+	stdin io.Reader,
+	stdout io.Writer,
+	stderr io.Writer,
+) (int, error) {
+	create, err := p.cli.ContainerExecCreate(ctx, providerRef, container.ExecOptions{
+		Cmd:          cmd,
+		User:         user,
+		WorkingDir:   "/workspace",
+		AttachStdin:  stdin != nil,
+		AttachStdout: true,
+		AttachStderr: true,
+		Tty:          false,
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	attached, err := p.cli.ContainerExecAttach(ctx, create.ID, container.ExecAttachOptions{
+		Tty: false,
+	})
+	if err != nil {
+		return 0, err
+	}
+	defer attached.Close()
+
+	stdoutWriter := stdout
+	if stdoutWriter == nil {
+		stdoutWriter = io.Discard
+	}
+	stderrWriter := stderr
+	if stderrWriter == nil {
+		stderrWriter = io.Discard
+	}
+
+	var stdinErr error
+	if stdin != nil {
+		go func() {
+			_, stdinErr = io.Copy(attached.Conn, stdin)
+			_ = attached.CloseWrite()
+		}()
+	}
+
+	if _, err := stdcopy.StdCopy(stdoutWriter, stderrWriter, attached.Reader); err != nil && !errors.Is(err, io.EOF) {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return 0, context.DeadlineExceeded
+		}
+		return 0, err
+	}
+	if stdinErr != nil && !errors.Is(stdinErr, io.EOF) {
+		return 0, stdinErr
+	}
+
+	inspect, err := p.cli.ContainerExecInspect(ctx, create.ID)
+	if err != nil {
+		return 0, err
+	}
+	return inspect.ExitCode, nil
+}
+
+func (p *Provider) runFileScript(
+	ctx context.Context,
+	providerRef string,
+	cmd []string,
+	stdin io.Reader,
+	stdout io.Writer,
+	stderrBuffer *limitedBuffer,
+	operation string,
+	filePath string,
+) error {
+	exitCode, err := p.runExec(ctx, providerRef, cmd, "", stdin, stdout, stderrBuffer)
+	if err != nil {
+		return p.mapFileOpErr(err, stderrBuffer.String(), operation, filePath)
+	}
+	if exitCode != 0 {
+		return p.mapFileExitCode(exitCode, stderrBuffer.String(), operation, filePath)
+	}
+	return nil
+}

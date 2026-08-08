@@ -1,6 +1,11 @@
 package docker
 
-import "testing"
+import (
+	"errors"
+	"testing"
+
+	"github.com/Blue-Door-Software-Group/containers4agents/internal/provider/types"
+)
 
 func TestMapExecExitStatus(t *testing.T) {
 	tests := []struct {
@@ -23,6 +28,47 @@ func TestMapExecExitStatus(t *testing.T) {
 			got := mapExecExitStatus(tt.stderr, tt.exitCode)
 			if got != tt.want {
 				t.Fatalf("expected %q, got %q", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestMapFileExitCode(t *testing.T) {
+	p := &Provider{}
+	tests := []struct {
+		name     string
+		exitCode int
+		wantErr  error
+	}{
+		{name: "path escape maps denied", exitCode: 42, wantErr: types.ErrProviderDenied},
+		{name: "not found maps not found", exitCode: 44, wantErr: types.ErrProviderNotFound},
+		{name: "not regular file maps denied", exitCode: 45, wantErr: types.ErrProviderDenied},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := p.mapFileExitCode(tt.exitCode, "stderr", "download", "foo.txt")
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("expected %v, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestMapDockerErrConnectivityFallback(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{name: "cannot connect daemon", err: errors.New("Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?")},
+		{name: "error during connect", err: errors.New("error during connect: Get \"http://%2Fvar%2Frun%2Fdocker.sock/_ping\": dial unix /var/run/docker.sock: connect: connection refused")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mapDockerErr(tt.err)
+			if !errors.Is(got, types.ErrProviderUnavailable) {
+				t.Fatalf("expected ErrProviderUnavailable, got %v", got)
 			}
 		})
 	}
