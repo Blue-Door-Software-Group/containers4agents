@@ -16,6 +16,7 @@ alwaysApply: false
 - Every exported Go type, function, method, and package must have doc comments.
 - Keep package-level docs and README content aligned with current behavior and boundaries.
 - When adding a new package, include concise purpose and usage documentation.
+- When adding or changing Ent schemas, document entity intent, key constraints, and migration impact.
 
 ## Architecture and ADR synchronization
 
@@ -38,3 +39,4 @@ alwaysApply: false
 - Changed code behavior: update nearby package docs/README.
 - Changed API behavior: update API docs/spec and contract notes.
 - Changed architecture/ops guarantees: update `ARCHITECTURE.md` and ADRs.
+- Changed Ent schema/persistence model: update persistence sections and migration notes.

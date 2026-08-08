@@ -1,0 +1,37 @@
+---
+description: Ent ORM schema and migration rules for PostgreSQL metadata persistence
+globs: ent/schema/*.go,internal/metadata/**/*.go,cmd/**/*.go
+alwaysApply: false
+---
+
+# Ent ORM Rules
+
+## Scope
+
+- Use Ent as the canonical ORM layer for PostgreSQL-backed metadata state.
+- Apply these rules when editing schemas, metadata repositories, or startup migration flow.
+
+## Schema design
+
+- Define domain entities in `ent/schema` with clear, descriptive schema comments.
+- Use stable, opaque primary keys (UUID or equivalent) and immutable identity fields.
+- Add indexes for lifecycle and reconciliation query paths (state, deadlines, activity timestamps).
+- Encode important invariants using field constraints and validation where feasible.
+
+## Migrations and generation
+
+- Keep generated Ent artifacts machine-managed; do not hand-edit generated code.
+- Run Ent schema migrations through explicit startup controls (for example `AUTO_MIGRATE`) rather than implicit side effects.
+- Prefer non-destructive defaults; destructive migration behavior must be explicit and documented.
+
+## Repository layering
+
+- Keep Ent query details inside metadata repository adapters, not in HTTP handlers.
+- Map Ent/internal persistence errors into domain-level errors before API mapping.
+- Keep provider-specific identifiers out of Ent schema fields that are exposed through API contracts.
+
+## Change checklist
+
+- Schema changed: regenerate Ent artifacts and ensure migrations are addressed.
+- New query path: verify index coverage and reconcile/startup performance impact.
+- Persistence contract changed: update `ARCHITECTURE.md`, `docs/ADR_BACKLOG.md`, and relevant API/docs rules.

@@ -18,6 +18,7 @@ alwaysApply: false
 - HTTP handlers depend on service interfaces, not concrete provider implementations.
 - Lifecycle, execution, and file services may depend on provider ports and metadata ports.
 - Provider adapters must not import HTTP layer models or handler packages.
+- Ent ORM usage should be isolated to metadata/persistence adapters, not spread across handlers.
 
 ## Lifecycle authority
 
