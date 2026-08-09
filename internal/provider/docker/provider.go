@@ -347,7 +347,8 @@ func (p *Provider) ListWorkspace(ctx context.Context, providerRef string) ([]typ
 
 	script := strings.Join([]string{
 		"set -eu",
-		`find /workspace -mindepth 1 -print0 | while IFS= read -r -d '' p; do`,
+		`find /workspace -mindepth 1 -exec sh -c '`,
+		`for p do`,
 		`  rel="${p#/workspace/}"`,
 		`  name="${rel##*/}"`,
 		`  if [ -d "$p" ]; then`,
@@ -360,8 +361,9 @@ func (p *Provider) ListWorkspace(ctx context.Context, providerRef string) ([]typ
 		`    typ="other"; size="0"; hash=""`,
 		`  fi`,
 		`  mtime=$(stat -c %Y "$p" 2>/dev/null || stat -f %m "$p")`,
-		`  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$rel" "$name" "$typ" "$size" "$mtime" "$hash"`,
+		`  printf '%s\0%s\0%s\0%s\0%s\0%s\0' "$rel" "$name" "$typ" "$size" "$mtime" "$hash"`,
 		`done`,
+		`' sh {} +`,
 	}, "; ")
 
 	stdoutBuffer := &bytes.Buffer{}
@@ -379,48 +381,7 @@ func (p *Provider) ListWorkspace(ctx context.Context, providerRef string) ([]typ
 		return nil, err
 	}
 
-	text := strings.TrimSpace(stdoutBuffer.String())
-	if text == "" {
-		return []types.FileEntry{}, nil
-	}
-
-	lines := strings.Split(text, "\n")
-	entries := make([]types.FileEntry, 0, len(lines))
-	for _, line := range lines {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		parts := strings.SplitN(line, "\t", 6)
-		if len(parts) != 6 {
-			return nil, fmt.Errorf("%w: malformed manifest entry %q", types.ErrProviderInternal, line)
-		}
-
-		size, parseErr := strconv.ParseInt(parts[3], 10, 64)
-		if parseErr != nil {
-			return nil, fmt.Errorf("%w: invalid file size %q", types.ErrProviderInternal, parts[3])
-		}
-		mtimeUnix, parseErr := strconv.ParseInt(parts[4], 10, 64)
-		if parseErr != nil {
-			return nil, fmt.Errorf("%w: invalid mtime %q", types.ErrProviderInternal, parts[4])
-		}
-
-		entry := types.FileEntry{
-			Path:      parts[0],
-			Name:      parts[1],
-			Type:      parts[2],
-			SizeBytes: size,
-			ModTime:   time.Unix(mtimeUnix, 0).UTC(),
-		}
-		if entry.Type == "file" && parts[5] != "" {
-			entry.Hash = &types.FileHash{
-				Algorithm: "sha256",
-				Value:     parts[5],
-			}
-		}
-		entries = append(entries, entry)
-	}
-
-	return entries, nil
+	return parseManifestOutput(stdoutBuffer.Bytes())
 }
 
 func (p *Provider) ReadUsage(ctx context.Context, providerRef string) (types.UsageSnapshot, error) {
@@ -548,6 +509,58 @@ func buildRegistryAuthConfig(server, username, password string) (*registry.AuthC
 		Password:      strings.TrimSpace(password),
 		ServerAddress: registryServer,
 	}, nil
+}
+
+func parseManifestOutput(raw []byte) ([]types.FileEntry, error) {
+	if len(raw) == 0 {
+		return []types.FileEntry{}, nil
+	}
+
+	parts := bytes.Split(raw, []byte{0})
+	if len(parts) > 0 && len(parts[len(parts)-1]) == 0 {
+		parts = parts[:len(parts)-1]
+	}
+	if len(parts) == 0 {
+		return []types.FileEntry{}, nil
+	}
+	if len(parts)%6 != 0 {
+		return nil, fmt.Errorf("%w: malformed manifest output", types.ErrProviderInternal)
+	}
+
+	entries := make([]types.FileEntry, 0, len(parts)/6)
+	for i := 0; i < len(parts); i += 6 {
+		pathField := string(parts[i])
+		nameField := string(parts[i+1])
+		typeField := string(parts[i+2])
+		sizeField := string(parts[i+3])
+		mtimeField := string(parts[i+4])
+		hashField := string(parts[i+5])
+
+		size, parseErr := strconv.ParseInt(sizeField, 10, 64)
+		if parseErr != nil {
+			return nil, fmt.Errorf("%w: invalid file size", types.ErrProviderInternal)
+		}
+		mtimeUnix, parseErr := strconv.ParseInt(mtimeField, 10, 64)
+		if parseErr != nil {
+			return nil, fmt.Errorf("%w: invalid mtime", types.ErrProviderInternal)
+		}
+
+		entry := types.FileEntry{
+			Path:      pathField,
+			Name:      nameField,
+			Type:      typeField,
+			SizeBytes: size,
+			ModTime:   time.Unix(mtimeUnix, 0).UTC(),
+		}
+		if entry.Type == "file" && hashField != "" {
+			entry.Hash = &types.FileHash{
+				Algorithm: "sha256",
+				Value:     hashField,
+			}
+		}
+		entries = append(entries, entry)
+	}
+	return entries, nil
 }
 
 func mapDockerErr(err error) error {

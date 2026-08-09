@@ -1,8 +1,10 @@
 package docker
 
 import (
+	"bytes"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/provider/types"
 )
@@ -65,6 +67,43 @@ func TestBuildRegistryAuthConfig(t *testing.T) {
 	}
 	if _, err := buildRegistryAuthConfig("ghcr.io", "", "token"); err == nil {
 		t.Fatal("expected error for partial credentials")
+	}
+}
+
+func TestParseManifestOutputHandlesSpecialCharacters(t *testing.T) {
+	withSpecials := "dir/line\nbreak and space.txt"
+	name := "line\nbreak and space.txt"
+	raw := bytes.Join([][]byte{
+		[]byte(withSpecials),
+		[]byte(name),
+		[]byte("file"),
+		[]byte("12"),
+		[]byte("1723320000"),
+		[]byte("abc123"),
+	}, []byte{0})
+	raw = append(raw, 0)
+
+	entries, err := parseManifestOutput(raw)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected one entry, got %d", len(entries))
+	}
+	if entries[0].Path != withSpecials {
+		t.Fatalf("expected path %q, got %q", withSpecials, entries[0].Path)
+	}
+	if entries[0].Name != name {
+		t.Fatalf("expected name %q, got %q", name, entries[0].Name)
+	}
+	if entries[0].Type != "file" || entries[0].SizeBytes != 12 {
+		t.Fatalf("unexpected parsed entry: %+v", entries[0])
+	}
+	if entries[0].Hash == nil || entries[0].Hash.Value != "abc123" {
+		t.Fatalf("expected hash abc123, got %+v", entries[0].Hash)
+	}
+	if !entries[0].ModTime.Equal(time.Unix(1723320000, 0).UTC()) {
+		t.Fatalf("unexpected mtime: %s", entries[0].ModTime)
 	}
 }
 
