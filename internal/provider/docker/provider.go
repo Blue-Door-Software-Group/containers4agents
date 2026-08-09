@@ -354,7 +354,7 @@ func (p *Provider) ListWorkspace(ctx context.Context, providerRef string) ([]typ
 		`  if [ -d "$p" ]; then`,
 		`    typ="directory"; size="0"; hash=""`,
 		`  elif [ -f "$p" ]; then`,
-		`    typ="file"; size=$(wc -c < "$p" | tr -d ' '); hash=$(sha256sum "$p" | awk '{print $1}')`,
+		`    typ="file"; size=$(wc -c < "$p" | tr -d ' '); hash=$(sha256sum "$p"); hash=${hash%% *}`,
 		`  elif [ -L "$p" ]; then`,
 		`    typ="symlink"; size="0"; hash=""`,
 		`  else`,
