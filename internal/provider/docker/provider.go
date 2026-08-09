@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +28,7 @@ type Provider struct {
 	cli             *client.Client
 	imagePullPolicy string
 	registryAuth    *registry.AuthConfig
+	devMode         bool
 }
 
 func New(host string) (*Provider, error) {
@@ -38,6 +40,7 @@ type Options struct {
 	RegistryServer   string
 	RegistryUsername string
 	RegistryPassword string
+	DevMode          bool
 }
 
 func NewWithOptions(host string, opts Options) (*Provider, error) {
@@ -77,6 +80,7 @@ func NewWithOptions(host string, opts Options) (*Provider, error) {
 		cli:             cli,
 		imagePullPolicy: pullPolicy,
 		registryAuth:    registryAuth,
+		devMode:         opts.DevMode,
 	}, nil
 }
 
@@ -761,9 +765,35 @@ func (p *Provider) runFileScript(
 ) error {
 	exitCode, err := p.runExec(ctx, providerRef, cmd, "", stdin, stdout, stderrBuffer)
 	if err != nil {
+		if p.devMode {
+			slog.WarnContext(
+				ctx,
+				"docker file script execution failed",
+				"component", "provider_docker",
+				"operation", operation,
+				"provider_ref", providerRef,
+				"path", filePath,
+				"command", strings.Join(cmd, " "),
+				"stderr", stderrBuffer.String(),
+				"error", err.Error(),
+			)
+		}
 		return p.mapFileOpErr(err, stderrBuffer.String(), operation, filePath)
 	}
 	if exitCode != 0 {
+		if p.devMode {
+			slog.WarnContext(
+				ctx,
+				"docker file script returned non-zero exit",
+				"component", "provider_docker",
+				"operation", operation,
+				"provider_ref", providerRef,
+				"path", filePath,
+				"command", strings.Join(cmd, " "),
+				"exit_code", exitCode,
+				"stderr", stderrBuffer.String(),
+			)
+		}
 		return p.mapFileExitCode(exitCode, stderrBuffer.String(), operation, filePath)
 	}
 	return nil

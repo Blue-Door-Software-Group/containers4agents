@@ -5,12 +5,15 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/config"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/lifecycle"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/metadata/repository"
+	obslog "github.com/Blue-Door-Software-Group/containers4agents/internal/observability/logging"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/provider/types"
 )
 
@@ -308,5 +311,54 @@ func TestUploadRejectsWhenWorkspaceQuotaExceeded(t *testing.T) {
 	err := svc.Upload(context.Background(), "c1", "a.txt", bytes.NewReader([]byte("x")))
 	if err == nil || !errors.Is(err, ErrDiskQuotaExceeded) {
 		t.Fatalf("expected ErrDiskQuotaExceeded, got %v", err)
+	}
+}
+
+func TestManifestProviderFailureLogsRawErrorInDevMode(t *testing.T) {
+	var logs bytes.Buffer
+	oldDefault := slog.Default()
+	slog.SetDefault(obslog.NewWithWriter("info", &logs))
+	defer slog.SetDefault(oldDefault)
+
+	providerRef := "provider-1"
+	svc := NewService(
+		fakeRepo{
+			getFn: func(_ context.Context, _ string) (*repository.Container, error) {
+				return &repository.Container{
+					ExternalID:  "c1",
+					State:       lifecycle.StateRunning,
+					ProviderRef: &providerRef,
+				}, nil
+			},
+		},
+		fakeProvider{
+			uploadFn:   func(context.Context, string, string, io.Reader) error { return nil },
+			downloadFn: func(context.Context, string, string, io.Writer) error { return nil },
+			deleteFn:   func(context.Context, string, string) error { return nil },
+			listWorkspaceFn: func(context.Context, string) ([]types.FileEntry, error) {
+				return nil, errors.New("exec failed with sensitive path=/workspace/secret.txt")
+			},
+			readUsageFn: func(context.Context, string) (types.UsageSnapshot, error) {
+				return types.UsageSnapshot{}, nil
+			},
+		},
+		config.Config{
+			DevMode:                 true,
+			FileMaxUploadBytes:      10,
+			FileMaxDownloadBytes:    10,
+			WorkspaceDiskQuotaBytes: 1024,
+		},
+	)
+
+	_, err := svc.Manifest(context.Background(), "c1")
+	if err == nil {
+		t.Fatal("expected manifest error")
+	}
+	out := logs.String()
+	if !strings.Contains(out, "file provider call failed") {
+		t.Fatalf("expected provider failure log entry, got %q", out)
+	}
+	if !strings.Contains(out, "\"provider_error\":\"exec failed with sensitive path=/workspace/secret.txt\"") {
+		t.Fatalf("expected raw provider error in dev mode logs, got %q", out)
 	}
 }

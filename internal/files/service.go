@@ -73,6 +73,7 @@ func (s *Service) Upload(ctx context.Context, externalID string, requestedPath s
 	if err != nil {
 		outcome = "provider_failure"
 		s.recordProviderFailure("files.read_usage", providerFailureCategory(err))
+		s.logProviderFailure(ctx, "files.read_usage", err)
 		return s.mapProviderErr(err)
 	}
 	if s.cfg.ContainerFileCountMax > 0 && usage.FileCount >= s.cfg.ContainerFileCountMax {
@@ -106,6 +107,7 @@ func (s *Service) Upload(ctx context.Context, externalID string, requestedPath s
 		}
 		outcome = "provider_failure"
 		s.recordProviderFailure("files.upload", providerFailureCategory(err))
+		s.logProviderFailure(ctx, "files.upload", err)
 		return s.mapProviderErr(err)
 	}
 	s.touchActivity(ctx, row.ExternalID, row.State)
@@ -136,6 +138,7 @@ func (s *Service) Download(ctx context.Context, externalID string, requestedPath
 		}
 		outcome = "provider_failure"
 		s.recordProviderFailure("files.download", providerFailureCategory(err))
+		s.logProviderFailure(ctx, "files.download", err)
 		return s.mapProviderErr(err)
 	}
 
@@ -152,6 +155,7 @@ func (s *Service) Delete(ctx context.Context, externalID string, requestedPath s
 
 	if err := s.provider.DeletePath(ctx, providerRef, path); err != nil {
 		s.recordProviderFailure("files.delete", providerFailureCategory(err))
+		s.logProviderFailure(ctx, "files.delete", err)
 		return s.mapProviderErr(err)
 	}
 	s.touchActivity(ctx, row.ExternalID, row.State)
@@ -167,11 +171,13 @@ func (s *Service) Manifest(ctx context.Context, externalID string) (*Manifest, e
 	entries, err := s.provider.ListWorkspace(ctx, providerRef)
 	if err != nil {
 		s.recordProviderFailure("files.list_workspace", providerFailureCategory(err))
+		s.logProviderFailure(ctx, "files.list_workspace", err)
 		return nil, s.mapProviderErr(err)
 	}
 	usage, err := s.provider.ReadUsage(ctx, providerRef)
 	if err != nil {
 		s.recordProviderFailure("files.read_usage", providerFailureCategory(err))
+		s.logProviderFailure(ctx, "files.read_usage", err)
 		return nil, s.mapProviderErr(err)
 	}
 
@@ -376,6 +382,20 @@ func mapFileOutcome(err error) string {
 	default:
 		return "internal_error"
 	}
+}
+
+func (s *Service) logProviderFailure(ctx context.Context, operation string, err error) {
+	attrs := []any{
+		"component", "files",
+		"operation", operation,
+		"error_category", obslog.ErrorCategory(err),
+		"provider_category", providerFailureCategory(err),
+		"error_summary", obslog.ErrorSummary(err),
+	}
+	if s.cfg.DevMode {
+		attrs = append(attrs, "provider_error", err.Error())
+	}
+	obslog.WithRequestID(ctx, slog.Default()).WarnContext(ctx, "file provider call failed", attrs...)
 }
 
 func (s *Service) recordProviderFailure(operation string, category string) {

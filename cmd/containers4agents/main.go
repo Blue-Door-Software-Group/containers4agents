@@ -96,6 +96,7 @@ func run() error {
 		RegistryServer:   cfg.DockerRegistryServer,
 		RegistryUsername: cfg.DockerRegistryUsername,
 		RegistryPassword: cfg.DockerRegistryPassword,
+		DevMode:          cfg.DevMode,
 	})
 	if err != nil {
 		return fmt.Errorf("initialize docker provider: %w", err)
