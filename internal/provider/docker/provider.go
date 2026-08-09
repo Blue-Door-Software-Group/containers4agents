@@ -357,14 +357,14 @@ for p do
   if [ -d "$p" ]; then
     typ="directory"; size="0"; hash=""
   elif [ -f "$p" ]; then
-    typ="file"; size=$(wc -c < "$p" | tr -d ' '); hash=$(sha256sum "$p"); hash=${hash%% *}
+    typ="file"; size=$(wc -c < "$p" | tr -d " "); hash=$(sha256sum "$p"); hash=${hash%% *}
   elif [ -L "$p" ]; then
     typ="symlink"; size="0"; hash=""
   else
     typ="other"; size="0"; hash=""
   fi
   mtime=$(stat -c %Y "$p" 2>/dev/null || stat -f %m "$p")
-  printf '%s\0%s\0%s\0%s\0%s\0%s\0' "$rel" "$name" "$typ" "$size" "$mtime" "$hash"
+  printf "%s\0%s\0%s\0%s\0%s\0%s\0" "$rel" "$name" "$typ" "$size" "$mtime" "$hash"
 done
 ' sh {} +`
 
