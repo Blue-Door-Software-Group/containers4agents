@@ -59,3 +59,18 @@ func ErrorCategory(err error) string {
 		return "internal_error"
 	}
 }
+
+// ErrorSummary returns a sanitized, low-cardinality error summary safe for logs.
+// It intentionally avoids including raw error strings that might contain user payloads.
+func ErrorSummary(err error) string {
+	switch {
+	case err == nil:
+		return "none"
+	case errors.Is(err, context.Canceled):
+		return "context_canceled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	default:
+		return "redacted"
+	}
+}

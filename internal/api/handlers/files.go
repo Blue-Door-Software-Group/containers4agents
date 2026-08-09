@@ -224,6 +224,14 @@ func (h *FileHandler) Manifest(w http.ResponseWriter, r *http.Request) {
 
 func writeFileError(w http.ResponseWriter, r *http.Request, err error) {
 	requestID := middleware.GetRequestID(r.Context())
+	obslog.WithRequestID(r.Context(), slog.Default()).WarnContext(
+		r.Context(),
+		"file request failed",
+		"component", "api_files",
+		"operation", r.Method,
+		"error_category", obslog.ErrorCategory(err),
+		"error_summary", obslog.ErrorSummary(err),
+	)
 
 	switch {
 	case errors.Is(err, files.ErrPathViolation):

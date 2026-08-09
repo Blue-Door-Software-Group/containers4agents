@@ -133,7 +133,7 @@ func (s *Service) CreateContainer(ctx context.Context) (*ContainerView, error) {
 			"operation", "create",
 			"error_category", obslog.ErrorCategory(err),
 			"provider_category", category,
-			"error", err.Error(),
+			"error_summary", obslog.ErrorSummary(err),
 		)
 		if failedState, stateErr := NextState(row.State, TransitionCreateFailed); stateErr == nil {
 			_, _ = s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
@@ -236,7 +236,7 @@ func (s *Service) StopContainer(ctx context.Context, externalID string) (*Contai
 			"operation", "stop",
 			"error_category", obslog.ErrorCategory(err),
 			"provider_category", category,
-			"error", err.Error(),
+			"error_summary", obslog.ErrorSummary(err),
 		)
 		_, _ = s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
 			ExternalID: row.ExternalID,
@@ -326,7 +326,7 @@ func (s *Service) StartContainer(ctx context.Context, externalID string) (*Conta
 			"operation", "start",
 			"error_category", obslog.ErrorCategory(err),
 			"provider_category", category,
-			"error", err.Error(),
+			"error_summary", obslog.ErrorSummary(err),
 		)
 		if failedState, stateErr := NextState(startingState, TransitionStartFailed); stateErr == nil {
 			_, _ = s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
@@ -414,7 +414,7 @@ func (s *Service) PruneContainer(ctx context.Context, externalID string) (*Conta
 			"operation", "prune",
 			"error_category", obslog.ErrorCategory(err),
 			"provider_category", category,
-			"error", err.Error(),
+			"error_summary", obslog.ErrorSummary(err),
 		)
 		if failedState, stateErr := NextState(pruningState, TransitionPruneFailed); stateErr == nil {
 			nextRetryAt := time.Now().UTC().Add(backoffForRetry(row.PruneRetryCount))

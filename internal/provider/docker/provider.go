@@ -185,15 +185,7 @@ func (p *Provider) Exec(ctx context.Context, providerRef string, req types.ExecR
 	stdoutBuffer := newLimitedBuffer(req.MaxStdoutBytes)
 	stderrBuffer := newLimitedBuffer(req.MaxStderrBytes)
 
-	args := make([]string, 0, 5+len(req.Command))
-	args = append(args, "exec", "-w", "/workspace")
-	if strings.TrimSpace(req.User) != "" {
-		args = append(args, "--user", req.User)
-	}
-	args = append(args, providerRef)
-	args = append(args, req.Command...)
-
-	exitCode, err := p.runExec(ctx, providerRef, args, req.User, nil, stdoutBuffer, stderrBuffer)
+	exitCode, err := p.runExec(ctx, providerRef, req.Command, req.User, nil, stdoutBuffer, stderrBuffer)
 	result := types.ExecResult{
 		Stdout:       stdoutBuffer.String(),
 		Stderr:       stderrBuffer.String(),

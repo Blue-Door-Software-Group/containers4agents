@@ -276,6 +276,14 @@ func (h *ContainerHandler) completeIdempotent(
 
 func writeLifecycleError(w http.ResponseWriter, r *http.Request, err error) {
 	requestID := middleware.GetRequestID(r.Context())
+	obslog.WithRequestID(r.Context(), slog.Default()).WarnContext(
+		r.Context(),
+		"container lifecycle request failed",
+		"component", "api_containers",
+		"operation", r.Method,
+		"error_category", obslog.ErrorCategory(err),
+		"error_summary", obslog.ErrorSummary(err),
+	)
 
 	switch {
 	case errors.Is(err, lifecycle.ErrContainerNotFound):
