@@ -3,13 +3,13 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,80 +28,20 @@ import (
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/provider/docker"
 )
 
-func TestPhase5SandboxViolationAndNonRootExec(t *testing.T) {
-	env := setupPhase5IntegrationEnv(t, func(cfg *config.Config) {
-		cfg.ContainerDropAllCapabilities = true
-		cfg.ContainerNoNewPrivileges = true
-		cfg.ContainerExecUser = "65534:65534"
-	})
-	defer env.close()
-
-	containerID := createContainerForExec(t, env.httpServer.URL)
-
-	uidResp := execCommand(t, env.httpServer.URL, containerID, `{"command":["sh","-lc","id -u"]}`)
-	if uidResp.StatusCode != http.StatusOK {
-		t.Fatalf("expected status 200 for id -u, got %d", uidResp.StatusCode)
-	}
-	var uidPayload map[string]any
-	if err := json.NewDecoder(uidResp.Body).Decode(&uidPayload); err != nil {
-		t.Fatalf("decode uid payload: %v", err)
-	}
-	_ = uidResp.Body.Close()
-	if uidPayload["stdout"] == "0\n" {
-		t.Fatalf("expected non-root exec user, got stdout=%q", uidPayload["stdout"])
-	}
-
-	sandboxResp := execCommand(t, env.httpServer.URL, containerID, `{"command":["sh","-lc","mkdir -p /tmp/mnt && mount -t tmpfs none /tmp/mnt"]}`)
-	if sandboxResp.StatusCode != http.StatusOK {
-		t.Fatalf("expected status 200 for mount probe, got %d", sandboxResp.StatusCode)
-	}
-	var sandboxPayload map[string]any
-	if err := json.NewDecoder(sandboxResp.Body).Decode(&sandboxPayload); err != nil {
-		t.Fatalf("decode sandbox payload: %v", err)
-	}
-	_ = sandboxResp.Body.Close()
-	status, _ := sandboxPayload["status"].(string)
-	if status != "sandbox_violation" && status != "user_error" {
-		t.Fatalf("expected sandbox_violation or user_error, got %q", status)
-	}
-}
-
-func TestPhase5WorkspaceQuotaUploadLimit(t *testing.T) {
-	env := setupPhase5IntegrationEnv(t, func(cfg *config.Config) {
-		cfg.WorkspaceDiskQuotaBytes = 1024
-		cfg.FileMaxUploadBytes = 8192
-		cfg.ContainerFileCountMax = 1000
-	})
-	defer env.close()
-
-	containerID := createContainerForExec(t, env.httpServer.URL)
-
-	body := bytes.Repeat([]byte("a"), 2048)
-	uploadReq, _ := http.NewRequest(http.MethodPut, env.httpServer.URL+"/v1/containers/"+containerID+"/files/too-big.txt", bytes.NewReader(body))
-	uploadReq.Header.Set("Authorization", "Bearer integration-key")
-	uploadResp, err := http.DefaultClient.Do(uploadReq)
-	if err != nil {
-		t.Fatalf("upload request failed: %v", err)
-	}
-	defer uploadResp.Body.Close()
-	if uploadResp.StatusCode != http.StatusRequestEntityTooLarge {
-		t.Fatalf("expected 413 for quota overflow, got %d", uploadResp.StatusCode)
-	}
-}
-
-type phase5IntegrationEnv struct {
+type integrationTestEnv struct {
 	cfg        config.Config
 	repoClient *entrepo.Client
 	provider   *docker.Provider
 	httpServer *httptest.Server
 }
 
-func setupPhase5IntegrationEnv(t *testing.T, tweak func(*config.Config)) *phase5IntegrationEnv {
+func setupIntegrationEnv(t *testing.T, tweak func(*config.Config)) *integrationTestEnv {
 	t.Helper()
 
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Skip("docker binary not available")
 	}
+
 	dsn := os.Getenv("C4A_TEST_DB_DSN")
 	if dsn == "" {
 		t.Skip("C4A_TEST_DB_DSN not set")
@@ -156,7 +96,14 @@ func setupPhase5IntegrationEnv(t *testing.T, tweak func(*config.Config)) *phase5
 	if err := migrations.Run(context.Background(), logger, repoClient.Ent, true); err != nil {
 		t.Fatalf("run migrations: %v", err)
 	}
-	dockerProvider, err := docker.New(cfg.DockerHost)
+
+	dockerProvider, err := docker.NewWithOptions(cfg.DockerHost, docker.Options{
+		ImagePullPolicy:  cfg.DockerImagePullPolicy,
+		RegistryServer:   cfg.DockerRegistryServer,
+		RegistryUsername: cfg.DockerRegistryUsername,
+		RegistryPassword: cfg.DockerRegistryPassword,
+		DevMode:          cfg.DevMode,
+	})
 	if err != nil {
 		t.Fatalf("create docker provider: %v", err)
 	}
@@ -172,10 +119,11 @@ func setupPhase5IntegrationEnv(t *testing.T, tweak func(*config.Config)) *phase5
 	if err != nil {
 		t.Fatalf("create key manager: %v", err)
 	}
+
 	handler := NewHandler(metrics.New(), middleware.Auth(keyManager), containerHandler, executionHandler, fileHandler)
 	httpServer := httptest.NewServer(handler)
 
-	return &phase5IntegrationEnv{
+	return &integrationTestEnv{
 		cfg:        cfg,
 		repoClient: repoClient,
 		provider:   dockerProvider,
@@ -183,8 +131,65 @@ func setupPhase5IntegrationEnv(t *testing.T, tweak func(*config.Config)) *phase5
 	}
 }
 
-func (e *phase5IntegrationEnv) close() {
+func (e *integrationTestEnv) close() {
 	e.httpServer.Close()
 	_ = e.provider.Close()
 	_ = e.repoClient.Close()
+}
+
+func createContainerForExec(t *testing.T, baseURL string) string {
+	t.Helper()
+	createReq, _ := http.NewRequest(http.MethodPost, baseURL+"/v1/containers", nil)
+	createReq.Header.Set("Authorization", "Bearer integration-key")
+	createResp, err := http.DefaultClient.Do(createReq)
+	if err != nil {
+		t.Fatalf("create request failed: %v", err)
+	}
+	defer createResp.Body.Close()
+	if createResp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected create status 201, got %d", createResp.StatusCode)
+	}
+
+	var payload map[string]any
+	if err := json.NewDecoder(createResp.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+
+	containerID, _ := payload["id"].(string)
+	if containerID == "" {
+		t.Fatal("expected container id")
+	}
+	return containerID
+}
+
+func execCommand(t *testing.T, baseURL, containerID, body string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/v1/containers/"+containerID+"/exec", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("create exec request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer integration-key")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("run exec request: %v", err)
+	}
+	return resp
+}
+
+func mustKeyManager(t *testing.T, configured string) *auth.KeyManager {
+	t.Helper()
+	m, err := auth.NewKeyManager(configured, false)
+	if err != nil {
+		t.Fatalf("create key manager: %v", err)
+	}
+	return m
+}
+
+func envOrDefault(key, fallback string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	return v
 }

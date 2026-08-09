@@ -12,13 +12,13 @@ import (
 	"testing"
 )
 
-func TestPhase4UploadDownloadManifestDeleteRoundTrip(t *testing.T) {
-	env := setupPhase1IntegrationEnv(t)
+func TestFileRoundTripManifestAndDelete(t *testing.T) {
+	env := setupIntegrationEnv(t, nil)
 	defer env.close()
 
 	containerID := createContainerForExec(t, env.httpServer.URL)
 
-	textBody := []byte("hello from phase 4")
+	textBody := []byte("hello from integration file test")
 	uploadFile(t, env.httpServer.URL, containerID, "docs/readme.txt", textBody, http.StatusCreated)
 
 	binaryBody := []byte{0x00, 0x01, 0x7f, 0x80, 0xff, 0x10}
@@ -100,8 +100,8 @@ func TestPhase4UploadDownloadManifestDeleteRoundTrip(t *testing.T) {
 	}
 }
 
-func TestPhase4TraversalAndSymlinkEscapeRejected(t *testing.T) {
-	env := setupPhase1IntegrationEnv(t)
+func TestFileTraversalAndSymlinkEscapeRejected(t *testing.T) {
+	env := setupIntegrationEnv(t, nil)
 	defer env.close()
 
 	containerID := createContainerForExec(t, env.httpServer.URL)
@@ -135,8 +135,8 @@ func TestPhase4TraversalAndSymlinkEscapeRejected(t *testing.T) {
 	}
 }
 
-func TestPhase4StoppedAllowedAndPrunedConflict(t *testing.T) {
-	env := setupPhase1IntegrationEnv(t)
+func TestFileOperationsAllowedForStoppedButNotPrunedContainers(t *testing.T) {
+	env := setupIntegrationEnv(t, nil)
 	defer env.close()
 
 	containerID := createContainerForExec(t, env.httpServer.URL)

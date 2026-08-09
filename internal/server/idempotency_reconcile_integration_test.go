@@ -18,13 +18,13 @@ import (
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/reconcile"
 )
 
-func TestPhase6CreateIdempotencyReplay(t *testing.T) {
-	env := setupPhase5IntegrationEnv(t, nil)
+func TestIdempotencyReplaysCreateResponseForSameKey(t *testing.T) {
+	env := setupIntegrationEnv(t, nil)
 	defer env.close()
 
 	req1, _ := http.NewRequest(http.MethodPost, env.httpServer.URL+"/v1/containers", nil)
 	req1.Header.Set("Authorization", "Bearer integration-key")
-	req1.Header.Set("Idempotency-Key", "phase6-create-key")
+	req1.Header.Set("Idempotency-Key", "create-key")
 	resp1, err := http.DefaultClient.Do(req1)
 	if err != nil {
 		t.Fatalf("first create request failed: %v", err)
@@ -40,7 +40,7 @@ func TestPhase6CreateIdempotencyReplay(t *testing.T) {
 
 	req2, _ := http.NewRequest(http.MethodPost, env.httpServer.URL+"/v1/containers", nil)
 	req2.Header.Set("Authorization", "Bearer integration-key")
-	req2.Header.Set("Idempotency-Key", "phase6-create-key")
+	req2.Header.Set("Idempotency-Key", "create-key")
 	resp2, err := http.DefaultClient.Do(req2)
 	if err != nil {
 		t.Fatalf("replay create request failed: %v", err)
@@ -58,8 +58,8 @@ func TestPhase6CreateIdempotencyReplay(t *testing.T) {
 	}
 }
 
-func TestPhase6UploadIdempotencyReplayAndCapacityError(t *testing.T) {
-	env := setupPhase5IntegrationEnv(t, func(cfg *config.Config) {
+func TestIdempotencyUploadReplayAndCapacityAdmission(t *testing.T) {
+	env := setupIntegrationEnv(t, func(cfg *config.Config) {
 		cfg.RunningContainerLimit = 1
 		cfg.TotalContainerLimit = 1
 	})
@@ -69,7 +69,7 @@ func TestPhase6UploadIdempotencyReplayAndCapacityError(t *testing.T) {
 
 	uploadReq1, _ := http.NewRequest(http.MethodPut, env.httpServer.URL+"/v1/containers/"+containerID+"/files/idempotent.txt", bytes.NewReader([]byte("hello")))
 	uploadReq1.Header.Set("Authorization", "Bearer integration-key")
-	uploadReq1.Header.Set("Idempotency-Key", "phase6-upload-key")
+	uploadReq1.Header.Set("Idempotency-Key", "upload-key")
 	uploadResp1, err := http.DefaultClient.Do(uploadReq1)
 	if err != nil {
 		t.Fatalf("first upload request failed: %v", err)
@@ -81,7 +81,7 @@ func TestPhase6UploadIdempotencyReplayAndCapacityError(t *testing.T) {
 
 	uploadReq2, _ := http.NewRequest(http.MethodPut, env.httpServer.URL+"/v1/containers/"+containerID+"/files/idempotent.txt", bytes.NewReader([]byte("hello")))
 	uploadReq2.Header.Set("Authorization", "Bearer integration-key")
-	uploadReq2.Header.Set("Idempotency-Key", "phase6-upload-key")
+	uploadReq2.Header.Set("Idempotency-Key", "upload-key")
 	uploadResp2, err := http.DefaultClient.Do(uploadReq2)
 	if err != nil {
 		t.Fatalf("replay upload request failed: %v", err)
@@ -103,13 +103,13 @@ func TestPhase6UploadIdempotencyReplayAndCapacityError(t *testing.T) {
 	}
 }
 
-func TestPhase6UploadIdempotencyRejectsBodyMismatch(t *testing.T) {
-	env := setupPhase5IntegrationEnv(t, nil)
+func TestIdempotencyUploadRejectsBodyMismatch(t *testing.T) {
+	env := setupIntegrationEnv(t, nil)
 	defer env.close()
 
 	containerID := createContainerForExec(t, env.httpServer.URL)
 
-	key := "phase6-upload-mismatch-key"
+	key := "upload-mismatch-key"
 	firstReq, _ := http.NewRequest(http.MethodPut, env.httpServer.URL+"/v1/containers/"+containerID+"/files/body.txt", bytes.NewReader([]byte("hello")))
 	firstReq.Header.Set("Authorization", "Bearer integration-key")
 	firstReq.Header.Set("Idempotency-Key", key)
@@ -135,8 +135,8 @@ func TestPhase6UploadIdempotencyRejectsBodyMismatch(t *testing.T) {
 	}
 }
 
-func TestPhase6ReconcileBackfillsLegacyStoppedAndPrunesWhenExpired(t *testing.T) {
-	env := setupPhase5IntegrationEnv(t, nil)
+func TestReconcileBackfillsLegacyStoppedAndPrunesWhenExpired(t *testing.T) {
+	env := setupIntegrationEnv(t, nil)
 	defer env.close()
 
 	containerID := createContainerForExec(t, env.httpServer.URL)
@@ -155,7 +155,6 @@ func TestPhase6ReconcileBackfillsLegacyStoppedAndPrunesWhenExpired(t *testing.T)
 	repo := repository.NewEntContainerRepository(env.repoClient.Ent)
 	lifecycleSvc := lifecycle.NewService(repo, env.provider, env.cfg)
 
-	// Stage 1: legacy stopped row with null deadlines should be backfilled.
 	now := time.Now().UTC()
 	_, err = env.repoClient.Ent.ContainerMetadata.
 		Update().
@@ -175,7 +174,7 @@ func TestPhase6ReconcileBackfillsLegacyStoppedAndPrunesWhenExpired(t *testing.T)
 		lifecycleSvc,
 		obslog.New("info"),
 		true,
-		false, // local mode for deterministic integration testing
+		false,
 		100*time.Millisecond,
 		50*time.Millisecond,
 		20*time.Minute,
@@ -198,7 +197,6 @@ func TestPhase6ReconcileBackfillsLegacyStoppedAndPrunesWhenExpired(t *testing.T)
 		t.Fatal("expected stopped_at to be backfilled for legacy stopped row")
 	}
 
-	// Stage 2: clear deadlines again and set old activity so backfilled deadline is already expired.
 	oldActivity := time.Now().UTC().Add(-3 * time.Second)
 	_, err = env.repoClient.Ent.ContainerMetadata.
 		Update().
@@ -222,7 +220,7 @@ func TestPhase6ReconcileBackfillsLegacyStoppedAndPrunesWhenExpired(t *testing.T)
 		100*time.Millisecond,
 		50*time.Millisecond,
 		20*time.Minute,
-		time.Second, // short retention for test
+		time.Second,
 		64001,
 	)
 	pruneCtx, pruneCancel := context.WithCancel(context.Background())

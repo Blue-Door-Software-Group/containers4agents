@@ -10,8 +10,8 @@ import (
 	"time"
 )
 
-func TestPhase3ExecCommandMatrix(t *testing.T) {
-	env := setupPhase1IntegrationEnv(t)
+func TestExecutionCommandMatrix(t *testing.T) {
+	env := setupIntegrationEnv(t, nil)
 	defer env.close()
 
 	containerID := createContainerForExec(t, env.httpServer.URL)
@@ -43,8 +43,8 @@ func TestPhase3ExecCommandMatrix(t *testing.T) {
 	}
 }
 
-func TestPhase3ExecTimeoutAndTruncation(t *testing.T) {
-	env := setupPhase1IntegrationEnv(t)
+func TestExecutionTimeoutAndTruncation(t *testing.T) {
+	env := setupIntegrationEnv(t, nil)
 	defer env.close()
 
 	containerID := createContainerForExec(t, env.httpServer.URL)
@@ -76,8 +76,8 @@ func TestPhase3ExecTimeoutAndTruncation(t *testing.T) {
 	}
 }
 
-func TestPhase3ExecStoppedContainerAndConcurrentConflict(t *testing.T) {
-	env := setupPhase1IntegrationEnv(t)
+func TestExecutionStoppedContainerAndConcurrentConflict(t *testing.T) {
+	env := setupIntegrationEnv(t, nil)
 	defer env.close()
 
 	containerID := createContainerForExec(t, env.httpServer.URL)
@@ -143,46 +143,6 @@ func TestPhase3ExecStoppedContainerAndConcurrentConflict(t *testing.T) {
 	if err := <-firstDone; err != nil {
 		t.Fatalf("first exec request failed: %v", err)
 	}
-}
-
-func createContainerForExec(t *testing.T, baseURL string) string {
-	t.Helper()
-	createReq, _ := http.NewRequest(http.MethodPost, baseURL+"/v1/containers", nil)
-	createReq.Header.Set("Authorization", "Bearer integration-key")
-	createResp, err := http.DefaultClient.Do(createReq)
-	if err != nil {
-		t.Fatalf("create request failed: %v", err)
-	}
-	defer createResp.Body.Close()
-	if createResp.StatusCode != http.StatusCreated {
-		t.Fatalf("expected create status 201, got %d", createResp.StatusCode)
-	}
-
-	var payload map[string]any
-	if err := json.NewDecoder(createResp.Body).Decode(&payload); err != nil {
-		t.Fatalf("decode create response: %v", err)
-	}
-
-	containerID, _ := payload["id"].(string)
-	if containerID == "" {
-		t.Fatal("expected container id")
-	}
-	return containerID
-}
-
-func execCommand(t *testing.T, baseURL, containerID, body string) *http.Response {
-	t.Helper()
-	req, err := http.NewRequest(http.MethodPost, baseURL+"/v1/containers/"+containerID+"/exec", strings.NewReader(body))
-	if err != nil {
-		t.Fatalf("create exec request: %v", err)
-	}
-	req.Header.Set("Authorization", "Bearer integration-key")
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("run exec request: %v", err)
-	}
-	return resp
 }
 
 type unexpectedStatusError struct {

@@ -5,11 +5,110 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
+
+	"github.com/Blue-Door-Software-Group/containers4agents/internal/api/handlers"
+	"github.com/Blue-Door-Software-Group/containers4agents/internal/api/middleware"
+	"github.com/Blue-Door-Software-Group/containers4agents/internal/execution"
+	filesvc "github.com/Blue-Door-Software-Group/containers4agents/internal/files"
+	"github.com/Blue-Door-Software-Group/containers4agents/internal/lifecycle"
+	"github.com/Blue-Door-Software-Group/containers4agents/internal/metadata/repository"
+	"github.com/Blue-Door-Software-Group/containers4agents/internal/observability/metrics"
 )
 
-func TestPhase2StartAndPruneLifecycle(t *testing.T) {
-	env := setupPhase1IntegrationEnv(t)
+func TestContainerCreateStatusStopPersistsAcrossServerRestart(t *testing.T) {
+	env := setupIntegrationEnv(t, nil)
+	defer env.close()
+
+	unauthReq, _ := http.NewRequest(http.MethodPost, env.httpServer.URL+"/v1/containers", nil)
+	unauthResp, err := http.DefaultClient.Do(unauthReq)
+	if err != nil {
+		t.Fatalf("unauthorized create request failed: %v", err)
+	}
+	if unauthResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected unauthorized status 401, got %d", unauthResp.StatusCode)
+	}
+	_ = unauthResp.Body.Close()
+
+	createReq, _ := http.NewRequest(http.MethodPost, env.httpServer.URL+"/v1/containers", nil)
+	createReq.Header.Set("Authorization", "Bearer integration-key")
+	createResp, err := http.DefaultClient.Do(createReq)
+	if err != nil {
+		t.Fatalf("create request failed: %v", err)
+	}
+	defer createResp.Body.Close()
+	if createResp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected create status 201, got %d", createResp.StatusCode)
+	}
+
+	var created map[string]any
+	if err := json.NewDecoder(createResp.Body).Decode(&created); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+	containerID, _ := created["id"].(string)
+	if containerID == "" {
+		t.Fatal("expected created container id")
+	}
+
+	statusReq, _ := http.NewRequest(http.MethodGet, env.httpServer.URL+"/v1/containers/"+containerID, nil)
+	statusReq.Header.Set("Authorization", "Bearer integration-key")
+	statusResp, err := http.DefaultClient.Do(statusReq)
+	if err != nil {
+		t.Fatalf("status request failed: %v", err)
+	}
+	defer statusResp.Body.Close()
+	if statusResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status code 200, got %d", statusResp.StatusCode)
+	}
+
+	stopReq, _ := http.NewRequest(http.MethodPost, env.httpServer.URL+"/v1/containers/"+containerID+"/stop", nil)
+	stopReq.Header.Set("Authorization", "Bearer integration-key")
+	stopResp, err := http.DefaultClient.Do(stopReq)
+	if err != nil {
+		t.Fatalf("stop request failed: %v", err)
+	}
+	defer stopResp.Body.Close()
+	if stopResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected stop status 200, got %d", stopResp.StatusCode)
+	}
+
+	env.httpServer.Close()
+	repo := repository.NewEntContainerRepository(env.repoClient.Ent)
+	lifecycleSvc := lifecycle.NewService(repo, env.provider, env.cfg)
+	executionSvc := execution.NewService(repo, env.provider, env.cfg)
+	fileSvc := filesvc.NewService(repo, env.provider, env.cfg)
+	handler := NewHandler(
+		metrics.New(),
+		middleware.Auth(mustKeyManager(t, "integration-key")),
+		handlers.NewContainerHandler(lifecycleSvc),
+		handlers.NewExecutionHandler(executionSvc),
+		handlers.NewFileHandler(fileSvc, env.cfg.FileMaxUploadBytes),
+	)
+	env.httpServer = httptest.NewServer(handler)
+
+	statusReq2, _ := http.NewRequest(http.MethodGet, env.httpServer.URL+"/v1/containers/"+containerID, nil)
+	statusReq2.Header.Set("Authorization", "Bearer integration-key")
+	statusResp2, err := http.DefaultClient.Do(statusReq2)
+	if err != nil {
+		t.Fatalf("status request after restart failed: %v", err)
+	}
+	defer statusResp2.Body.Close()
+	if statusResp2.StatusCode != http.StatusOK {
+		t.Fatalf("expected status code 200 after restart, got %d", statusResp2.StatusCode)
+	}
+
+	var statusPayload map[string]any
+	if err := json.NewDecoder(statusResp2.Body).Decode(&statusPayload); err != nil {
+		t.Fatalf("decode status response after restart: %v", err)
+	}
+	if statusPayload["state"] != "stopped" {
+		t.Fatalf("expected persisted state stopped after restart, got %v", statusPayload["state"])
+	}
+}
+
+func TestContainerStartAndPruneLifecycleTransitions(t *testing.T) {
+	env := setupIntegrationEnv(t, nil)
 	defer env.close()
 
 	createReq, _ := http.NewRequest(http.MethodPost, env.httpServer.URL+"/v1/containers", nil)
@@ -103,8 +202,8 @@ func TestPhase2StartAndPruneLifecycle(t *testing.T) {
 	}
 }
 
-func TestPhase2PrunedContainerStateConflict(t *testing.T) {
-	env := setupPhase1IntegrationEnv(t)
+func TestContainerStartFromPrunedReturnsConflict(t *testing.T) {
+	env := setupIntegrationEnv(t, nil)
 	defer env.close()
 
 	createReq, _ := http.NewRequest(http.MethodPost, env.httpServer.URL+"/v1/containers", nil)
