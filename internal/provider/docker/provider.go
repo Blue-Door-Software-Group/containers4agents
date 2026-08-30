@@ -239,21 +239,7 @@ func (p *Provider) UploadFile(ctx context.Context, providerRef string, path stri
 		return fmt.Errorf("%w: missing file path", types.ErrProviderInternal)
 	}
 
-	script := strings.Join([]string{
-		"set -eu",
-		`rel="$1"`,
-		`dest="/workspace/$rel"`,
-		`parent=$(dirname "$dest")`,
-		`mkdir -p "$parent"`,
-		`resolved_parent=$(readlink -f "$parent")`,
-		`case "$resolved_parent/" in /workspace/*) ;; *) echo "path escapes workspace" >&2; exit 42;; esac`,
-		`final="$resolved_parent/$(basename "$dest")"`,
-		`if [ -L "$final" ]; then`,
-		`  resolved_final=$(readlink -f "$final" || true)`,
-		`  case "$resolved_final" in /workspace/*) ;; *) echo "symlink escapes workspace" >&2; exit 42;; esac`,
-		`fi`,
-		`cat > "$final"`,
-	}, "; ")
+	script := uploadScript()
 
 	stderrBuffer := newLimitedBuffer(16 * 1024)
 	if err := p.runFileScript(
@@ -269,6 +255,24 @@ func (p *Provider) UploadFile(ctx context.Context, providerRef string, path stri
 		return err
 	}
 	return nil
+}
+
+func uploadScript() string {
+	return strings.Join([]string{
+		"set -eu",
+		`rel="$1"`,
+		`dest="/workspace/$rel"`,
+		`parent=$(dirname "$dest")`,
+		`mkdir -p "$parent"`,
+		`resolved_parent=$(readlink -f "$parent")`,
+		`case "$resolved_parent/" in /workspace/*) ;; *) echo "path escapes workspace" >&2; exit 42;; esac`,
+		`final="$resolved_parent/$(basename "$dest")"`,
+		`if [ -L "$final" ]; then`,
+		`  resolved_final=$(readlink -f "$final" || true)`,
+		`  case "$resolved_final" in /workspace/*) ;; *) echo "symlink escapes workspace" >&2; exit 42;; esac`,
+		`fi`,
+		`cat > "$final"`,
+	}, "\n")
 }
 
 func (p *Provider) DownloadFile(ctx context.Context, providerRef string, path string, dst io.Writer) error {
@@ -291,7 +295,7 @@ func (p *Provider) DownloadFile(ctx context.Context, providerRef string, path st
 		`case "$resolved" in /workspace/*) ;; *) echo "path escapes workspace" >&2; exit 42;; esac`,
 		`if [ ! -f "$resolved" ]; then echo "not a regular file" >&2; exit 45; fi`,
 		`cat "$resolved"`,
-	}, "; ")
+	}, "\n")
 
 	stderrBuffer := newLimitedBuffer(16 * 1024)
 	if err := p.runFileScript(
@@ -326,7 +330,7 @@ func (p *Provider) DeletePath(ctx context.Context, providerRef string, path stri
 		`case "$resolved" in /workspace/*) ;; *) echo "path escapes workspace" >&2; exit 42;; esac`,
 		`if [ "$resolved" = "/workspace" ]; then echo "cannot delete workspace root" >&2; exit 42; fi`,
 		`rm -rf -- "$resolved"`,
-	}, "; ")
+	}, "\n")
 
 	stderrBuffer := newLimitedBuffer(16 * 1024)
 	if err := p.runFileScript(
@@ -396,7 +400,7 @@ func (p *Provider) ReadUsage(ctx context.Context, providerRef string) (types.Usa
 		`bytes=$(find /workspace -type f -exec wc -c {} + 2>/dev/null | awk 'BEGIN{s=0} { if ($2 != "total") s += $1 } END { print s + 0 }')`,
 		`count=$(find /workspace -type f 2>/dev/null | wc -l | tr -d ' ')`,
 		`printf '%s\t%s\n' "$bytes" "$count"`,
-	}, "; ")
+	}, "\n")
 
 	stdoutBuffer := &bytes.Buffer{}
 	stderrBuffer := newLimitedBuffer(16 * 1024)

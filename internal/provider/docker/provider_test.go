@@ -3,6 +3,7 @@ package docker
 import (
 	"bytes"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -174,5 +175,15 @@ func TestMapDockerErrConnectivityFallback(t *testing.T) {
 				t.Fatalf("expected wrapped provider error details, got %q", got.Error())
 			}
 		})
+	}
+}
+
+func TestUploadScriptDoesNotInjectThenSemicolon(t *testing.T) {
+	script := uploadScript()
+	if strings.Contains(script, "then;") {
+		t.Fatalf("upload script contains invalid token sequence 'then;': %q", script)
+	}
+	if !strings.Contains(script, "\n") {
+		t.Fatalf("upload script should use newline separators")
 	}
 }
