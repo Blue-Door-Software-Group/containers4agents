@@ -59,8 +59,14 @@ func (h *ContainerHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if begin != nil && begin.Replay {
-		writeReplay(w, begin.StatusCode, begin.ResponseBody)
-		return
+		replaySafe, replayErr := h.replayCreateResponseIfLive(r.Context(), begin, w)
+		if replayErr != nil {
+			writeLifecycleError(w, r, replayErr)
+			return
+		}
+		if replaySafe {
+			return
+		}
 	}
 
 	row, err := h.service.CreateContainer(r.Context())
@@ -72,6 +78,31 @@ func (h *ContainerHandler) Create(w http.ResponseWriter, r *http.Request) {
 	status := http.StatusCreated
 	writeJSON(w, status, resp)
 	h.completeIdempotent(r.Context(), "containers.create", scope, idemKey, requestHash, status, resp)
+}
+
+func (h *ContainerHandler) replayCreateResponseIfLive(ctx context.Context, begin *idempotency.BeginResult, w http.ResponseWriter) (bool, error) {
+	if begin == nil || !begin.Replay {
+		return false, nil
+	}
+
+	var replayed containerResponse
+	if err := json.Unmarshal([]byte(begin.ResponseBody), &replayed); err != nil {
+		return false, nil
+	}
+	containerID := replayed.ID
+	if containerID == "" {
+		return false, nil
+	}
+
+	_, err := h.service.GetContainer(ctx, containerID)
+	if err == nil {
+		writeReplay(w, begin.StatusCode, begin.ResponseBody)
+		return true, nil
+	}
+	if errors.Is(err, lifecycle.ErrContainerNotFound) {
+		return false, nil
+	}
+	return false, err
 }
 
 func (h *ContainerHandler) GetStatus(w http.ResponseWriter, r *http.Request) {

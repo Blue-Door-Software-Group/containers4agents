@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -77,8 +78,19 @@ func (r *handlerTestRepo) GetIdempotencyRecord(_ context.Context, operation, sco
 func (r *handlerTestRepo) CreateIdempotencyRecord(context.Context, repository.IdempotencyRecord) (*repository.IdempotencyRecord, error) {
 	return nil, nil
 }
-func (r *handlerTestRepo) UpdateIdempotencyRecordResult(context.Context, string, string, string, string, int, string) (*repository.IdempotencyRecord, error) {
-	return nil, nil
+func (r *handlerTestRepo) UpdateIdempotencyRecordResult(_ context.Context, operation, scope, key, requestHash string, statusCode int, responseBody string) (*repository.IdempotencyRecord, error) {
+	k := r.key(operation, scope, key)
+	record, ok := r.records[k]
+	if !ok {
+		return nil, repository.ErrNotFound
+	}
+	if record.RequestHash != requestHash {
+		return nil, repository.ErrStateConflict
+	}
+	record.StatusCode = statusCode
+	record.ResponseBody = &responseBody
+	r.records[k] = record
+	return record, nil
 }
 func (r *handlerTestRepo) DeleteExpiredIdempotencyRecords(context.Context, time.Time) (int, error) {
 	return 0, nil
@@ -110,6 +122,52 @@ func (s *noOpContainerService) StartContainer(context.Context, string) (*lifecyc
 	return nil, lifecycle.ErrContainerNotFound
 }
 func (s *noOpContainerService) PruneContainer(context.Context, string) (*lifecycle.ContainerView, error) {
+	return nil, lifecycle.ErrContainerNotFound
+}
+
+type replayAwareContainerService struct {
+	createCalls int
+	createID    string
+	getByID     map[string]error
+}
+
+func (s *replayAwareContainerService) CreateContainer(context.Context) (*lifecycle.ContainerView, error) {
+	s.createCalls++
+	now := time.Now().UTC()
+	return &lifecycle.ContainerView{
+		ExternalID:   s.createID,
+		State:        lifecycle.StateRunning,
+		Profile:      "default",
+		ImageVersion: "latest",
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}, nil
+}
+
+func (s *replayAwareContainerService) GetContainer(_ context.Context, externalID string) (*lifecycle.ContainerView, error) {
+	if err, ok := s.getByID[externalID]; ok && err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	return &lifecycle.ContainerView{
+		ExternalID:   externalID,
+		State:        lifecycle.StateRunning,
+		Profile:      "default",
+		ImageVersion: "latest",
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}, nil
+}
+
+func (s *replayAwareContainerService) StopContainer(context.Context, string) (*lifecycle.ContainerView, error) {
+	return nil, lifecycle.ErrContainerNotFound
+}
+
+func (s *replayAwareContainerService) StartContainer(context.Context, string) (*lifecycle.ContainerView, error) {
+	return nil, lifecycle.ErrContainerNotFound
+}
+
+func (s *replayAwareContainerService) PruneContainer(context.Context, string) (*lifecycle.ContainerView, error) {
 	return nil, lifecycle.ErrContainerNotFound
 }
 
@@ -227,5 +285,175 @@ func TestFileUploadHashMismatchMapsToConflict(t *testing.T) {
 	}
 	if payload.Code != "idempotency_conflict" {
 		t.Fatalf("expected idempotency_conflict code, got %q", payload.Code)
+	}
+}
+
+func TestContainerCreateReplayLiveContainerReturnsStoredResponse(t *testing.T) {
+	idemKey := "idem-live"
+	method := http.MethodPost
+	path := "/v1/containers"
+	requestHash := idempotency.Hash(method, path)
+	replayBody := `{"id":"c-live","state":"running","profile":"default","image_version":"latest","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}`
+
+	repo := &handlerTestRepo{
+		records: map[string]*repository.IdempotencyRecord{
+			"containers.create|containers:create|" + idemKey: {
+				Operation:    "containers.create",
+				Scope:        "containers:create",
+				Key:          idemKey,
+				RequestHash:  requestHash,
+				StatusCode:   http.StatusCreated,
+				ResponseBody: &replayBody,
+			},
+		},
+	}
+	containerSvc := &replayAwareContainerService{
+		createID: "c-new",
+		getByID:  map[string]error{"c-live": nil},
+	}
+	idemSvc := idempotency.NewService(repo, time.Hour)
+	handler := NewContainerHandler(containerSvc, idemSvc)
+
+	req := httptest.NewRequest(method, path, nil)
+	req.Header.Set(idempotency.HeaderName, idemKey)
+	rr := httptest.NewRecorder()
+	handler.Create(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if containerSvc.createCalls != 0 {
+		t.Fatalf("expected no create call, got %d", containerSvc.createCalls)
+	}
+	if strings.TrimSpace(rr.Body.String()) != replayBody {
+		t.Fatalf("expected replay body %s, got %s", replayBody, strings.TrimSpace(rr.Body.String()))
+	}
+}
+
+func TestContainerCreateReplayMissingContainerCreatesFreshAndUpdatesRecord(t *testing.T) {
+	idemKey := "idem-stale"
+	method := http.MethodPost
+	path := "/v1/containers"
+	requestHash := idempotency.Hash(method, path)
+	replayBody := `{"id":"c-old","state":"running","profile":"default","image_version":"latest","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}`
+
+	repo := &handlerTestRepo{
+		records: map[string]*repository.IdempotencyRecord{
+			"containers.create|containers:create|" + idemKey: {
+				Operation:    "containers.create",
+				Scope:        "containers:create",
+				Key:          idemKey,
+				RequestHash:  requestHash,
+				StatusCode:   http.StatusCreated,
+				ResponseBody: &replayBody,
+			},
+		},
+	}
+	containerSvc := &replayAwareContainerService{
+		createID: "c-new",
+		getByID:  map[string]error{"c-old": lifecycle.ErrContainerNotFound},
+	}
+	idemSvc := idempotency.NewService(repo, time.Hour)
+	handler := NewContainerHandler(containerSvc, idemSvc)
+
+	req := httptest.NewRequest(method, path, nil)
+	req.Header.Set(idempotency.HeaderName, idemKey)
+	rr := httptest.NewRecorder()
+	handler.Create(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if containerSvc.createCalls != 1 {
+		t.Fatalf("expected one fresh create call, got %d", containerSvc.createCalls)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode fresh create response: %v", err)
+	}
+	if payload["id"] != "c-new" {
+		t.Fatalf("expected new id c-new, got %v", payload["id"])
+	}
+	updated := repo.records["containers.create|containers:create|"+idemKey]
+	if updated == nil || updated.ResponseBody == nil || !strings.Contains(*updated.ResponseBody, `"id":"c-new"`) {
+		t.Fatalf("expected idempotency record to be updated with fresh create response")
+	}
+}
+
+func TestContainerCreateReplayMalformedBodyFallsBackToFreshCreate(t *testing.T) {
+	idemKey := "idem-bad-replay"
+	method := http.MethodPost
+	path := "/v1/containers"
+	requestHash := idempotency.Hash(method, path)
+	replayBody := `{"id":`
+
+	repo := &handlerTestRepo{
+		records: map[string]*repository.IdempotencyRecord{
+			"containers.create|containers:create|" + idemKey: {
+				Operation:    "containers.create",
+				Scope:        "containers:create",
+				Key:          idemKey,
+				RequestHash:  requestHash,
+				StatusCode:   http.StatusCreated,
+				ResponseBody: &replayBody,
+			},
+		},
+	}
+	containerSvc := &replayAwareContainerService{
+		createID: "c-fallback",
+		getByID:  map[string]error{},
+	}
+	idemSvc := idempotency.NewService(repo, time.Hour)
+	handler := NewContainerHandler(containerSvc, idemSvc)
+
+	req := httptest.NewRequest(method, path, nil)
+	req.Header.Set(idempotency.HeaderName, idemKey)
+	rr := httptest.NewRecorder()
+	handler.Create(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if containerSvc.createCalls != 1 {
+		t.Fatalf("expected fallback create call, got %d", containerSvc.createCalls)
+	}
+}
+
+func TestContainerCreateReplayLivenessErrorMapsToServiceUnavailable(t *testing.T) {
+	idemKey := "idem-liveness-error"
+	method := http.MethodPost
+	path := "/v1/containers"
+	requestHash := idempotency.Hash(method, path)
+	replayBody := `{"id":"c-live","state":"running","profile":"default","image_version":"latest","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}`
+
+	repo := &handlerTestRepo{
+		records: map[string]*repository.IdempotencyRecord{
+			"containers.create|containers:create|" + idemKey: {
+				Operation:    "containers.create",
+				Scope:        "containers:create",
+				Key:          idemKey,
+				RequestHash:  requestHash,
+				StatusCode:   http.StatusCreated,
+				ResponseBody: &replayBody,
+			},
+		},
+	}
+	containerSvc := &replayAwareContainerService{
+		createID: "c-should-not-create",
+		getByID:  map[string]error{"c-live": fmt.Errorf("%w: provider unavailable", lifecycle.ErrProviderFailure)},
+	}
+	idemSvc := idempotency.NewService(repo, time.Hour)
+	handler := NewContainerHandler(containerSvc, idemSvc)
+
+	req := httptest.NewRequest(method, path, nil)
+	req.Header.Set(idempotency.HeaderName, idemKey)
+	rr := httptest.NewRecorder()
+	handler.Create(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected status 503, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if containerSvc.createCalls != 0 {
+		t.Fatalf("expected no fresh create on liveness error, got %d", containerSvc.createCalls)
 	}
 }
