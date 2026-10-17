@@ -71,7 +71,8 @@ func (h *ContainerHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	row, err := h.service.CreateContainer(r.Context())
 	if err != nil {
-		writeLifecycleError(w, r, err)
+		status := writeLifecycleError(w, r, err)
+		h.completeIdempotent(r.Context(), "containers.create", scope, idemKey, requestHash, status, struct{}{})
 		return
 	}
 	resp := makeContainerResponse(row)
@@ -141,7 +142,8 @@ func (h *ContainerHandler) Stop(w http.ResponseWriter, r *http.Request) {
 
 	row, err := h.service.StopContainer(r.Context(), externalID)
 	if err != nil {
-		writeLifecycleError(w, r, err)
+		status := writeLifecycleError(w, r, err)
+		h.completeIdempotent(r.Context(), "containers.stop", scope, idemKey, requestHash, status, struct{}{})
 		return
 	}
 	resp := makeContainerResponse(row)
@@ -171,7 +173,8 @@ func (h *ContainerHandler) Start(w http.ResponseWriter, r *http.Request) {
 
 	row, err := h.service.StartContainer(r.Context(), externalID)
 	if err != nil {
-		writeLifecycleError(w, r, err)
+		status := writeLifecycleError(w, r, err)
+		h.completeIdempotent(r.Context(), "containers.start", scope, idemKey, requestHash, status, struct{}{})
 		return
 	}
 	resp := makeContainerResponse(row)
@@ -201,7 +204,8 @@ func (h *ContainerHandler) Prune(w http.ResponseWriter, r *http.Request) {
 
 	row, err := h.service.PruneContainer(r.Context(), externalID)
 	if err != nil {
-		writeLifecycleError(w, r, err)
+		status := writeLifecycleError(w, r, err)
+		h.completeIdempotent(r.Context(), "containers.prune", scope, idemKey, requestHash, status, struct{}{})
 		return
 	}
 	resp := makeContainerResponse(row)
@@ -305,7 +309,9 @@ func (h *ContainerHandler) completeIdempotent(
 	}
 }
 
-func writeLifecycleError(w http.ResponseWriter, r *http.Request, err error) {
+// writeLifecycleError writes the API error for err and returns the HTTP status
+// written, so idempotent handlers can record the failed attempt.
+func writeLifecycleError(w http.ResponseWriter, r *http.Request, err error) int {
 	requestID := middleware.GetRequestID(r.Context())
 	obslog.WithRequestID(r.Context(), slog.Default()).WarnContext(
 		r.Context(),
@@ -316,16 +322,19 @@ func writeLifecycleError(w http.ResponseWriter, r *http.Request, err error) {
 		"error_summary", obslog.ErrorSummary(err),
 	)
 
+	var apiErr apierrors.APIError
 	switch {
 	case errors.Is(err, lifecycle.ErrContainerNotFound):
-		apierrors.Write(w, requestID, apierrors.NotFound("container not found"))
+		apiErr = apierrors.NotFound("container not found")
 	case errors.Is(err, lifecycle.ErrStateConflict):
-		apierrors.Write(w, requestID, apierrors.Conflict(err.Error()))
+		apiErr = apierrors.Conflict(err.Error())
 	case errors.Is(err, lifecycle.ErrCapacityExceeded):
-		apierrors.Write(w, requestID, apierrors.CapacityExceeded(err.Error()))
+		apiErr = apierrors.CapacityExceeded(err.Error())
 	case errors.Is(err, lifecycle.ErrProviderFailure):
-		apierrors.Write(w, requestID, apierrors.ServiceUnavailable("container provider unavailable"))
+		apiErr = apierrors.ServiceUnavailable("container provider unavailable")
 	default:
-		apierrors.Write(w, requestID, apierrors.Internal("internal lifecycle error"))
+		apiErr = apierrors.Internal("internal lifecycle error")
 	}
+	apierrors.Write(w, requestID, apiErr)
+	return apiErr.Status
 }

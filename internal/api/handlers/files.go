@@ -108,7 +108,9 @@ func (h *FileHandler) Upload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if _, err := stagedFile.Seek(0, io.SeekStart); err != nil {
-			apierrors.Write(w, middleware.GetRequestID(r.Context()), apierrors.Internal("failed to rewind upload payload"))
+			apiErr := apierrors.Internal("failed to rewind upload payload")
+			apierrors.Write(w, middleware.GetRequestID(r.Context()), apiErr)
+			h.completeIdempotent(r.Context(), "files.upload", scope, idemKey, requestHash, apiErr.Status, "{}")
 			return
 		}
 		uploadReader = stagedFile
@@ -118,7 +120,8 @@ func (h *FileHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.Upload(r.Context(), externalID, requestedPath, uploadReader); err != nil {
-		writeFileError(w, r, err)
+		status := writeFileError(w, r, err)
+		h.completeIdempotent(r.Context(), "files.upload", scope, idemKey, requestHash, status, "{}")
 		return
 	}
 
@@ -222,7 +225,9 @@ func (h *FileHandler) Manifest(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-func writeFileError(w http.ResponseWriter, r *http.Request, err error) {
+// writeFileError writes the API error for err and returns the HTTP status
+// written, so idempotent handlers can record the failed attempt.
+func writeFileError(w http.ResponseWriter, r *http.Request, err error) int {
 	requestID := middleware.GetRequestID(r.Context())
 	obslog.WithRequestID(r.Context(), slog.Default()).WarnContext(
 		r.Context(),
@@ -233,22 +238,25 @@ func writeFileError(w http.ResponseWriter, r *http.Request, err error) {
 		"error_summary", obslog.ErrorSummary(err),
 	)
 
+	var apiErr apierrors.APIError
 	switch {
 	case errors.Is(err, files.ErrPathViolation):
-		apierrors.Write(w, requestID, apierrors.BadRequest("invalid workspace path"))
+		apiErr = apierrors.BadRequest("invalid workspace path")
 	case errors.Is(err, files.ErrDiskQuotaExceeded):
-		apierrors.Write(w, requestID, apierrors.PayloadTooLarge("workspace disk quota exceeded"))
+		apiErr = apierrors.PayloadTooLarge("workspace disk quota exceeded")
 	case errors.Is(err, files.ErrPayloadTooLarge):
-		apierrors.Write(w, requestID, apierrors.PayloadTooLarge("file payload exceeds configured limit"))
+		apiErr = apierrors.PayloadTooLarge("file payload exceeds configured limit")
 	case errors.Is(err, files.ErrContainerNotFound), errors.Is(err, files.ErrFileNotFound):
-		apierrors.Write(w, requestID, apierrors.NotFound("resource not found"))
+		apiErr = apierrors.NotFound("resource not found")
 	case errors.Is(err, files.ErrStateConflict):
-		apierrors.Write(w, requestID, apierrors.Conflict(err.Error()))
+		apiErr = apierrors.Conflict(err.Error())
 	case errors.Is(err, files.ErrProviderFailure):
-		apierrors.Write(w, requestID, apierrors.ServiceUnavailable("container provider unavailable"))
+		apiErr = apierrors.ServiceUnavailable("container provider unavailable")
 	default:
-		apierrors.Write(w, requestID, apierrors.Internal("internal file operation error"))
+		apiErr = apierrors.Internal("internal file operation error")
 	}
+	apierrors.Write(w, requestID, apiErr)
+	return apiErr.Status
 }
 
 type streamWriteTracker struct {
