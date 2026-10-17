@@ -75,8 +75,13 @@ func (r *handlerTestRepo) GetIdempotencyRecord(_ context.Context, operation, sco
 	}
 	return record, nil
 }
-func (r *handlerTestRepo) CreateIdempotencyRecord(context.Context, repository.IdempotencyRecord) (*repository.IdempotencyRecord, error) {
-	return nil, nil
+func (r *handlerTestRepo) CreateIdempotencyRecord(_ context.Context, record repository.IdempotencyRecord) (*repository.IdempotencyRecord, error) {
+	if r.records == nil {
+		r.records = map[string]*repository.IdempotencyRecord{}
+	}
+	stored := record
+	r.records[r.key(record.Operation, record.Scope, record.Key)] = &stored
+	return &stored, nil
 }
 func (r *handlerTestRepo) UpdateIdempotencyRecordResult(_ context.Context, operation, scope, key, requestHash string, statusCode int, responseBody string) (*repository.IdempotencyRecord, error) {
 	k := r.key(operation, scope, key)
@@ -456,4 +461,94 @@ func TestContainerCreateReplayLivenessErrorMapsToServiceUnavailable(t *testing.T
 	if containerSvc.createCalls != 0 {
 		t.Fatalf("expected no fresh create on liveness error, got %d", containerSvc.createCalls)
 	}
+}
+
+type failOnceContainerService struct {
+	noOpContainerService
+	failErr error
+}
+
+func (s *failOnceContainerService) CreateContainer(ctx context.Context) (*lifecycle.ContainerView, error) {
+	if s.failErr != nil {
+		s.createCalls++
+		err := s.failErr
+		s.failErr = nil
+		return nil, err
+	}
+	return s.noOpContainerService.CreateContainer(ctx)
+}
+
+func TestContainerCreateFailureReleasesIdempotencyKeyForRetry(t *testing.T) {
+	idemKey := "idem-retry-after-failure"
+	repo := &handlerTestRepo{}
+	containerSvc := &failOnceContainerService{
+		failErr: fmt.Errorf("%w: total container limit reached", lifecycle.ErrCapacityExceeded),
+	}
+	handler := NewContainerHandler(containerSvc, idempotency.NewService(repo, time.Hour))
+
+	doCreate := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/v1/containers", nil)
+		req.Header.Set(idempotency.HeaderName, idemKey)
+		rr := httptest.NewRecorder()
+		handler.Create(rr, req)
+		return rr
+	}
+
+	if rr := doCreate(); rr.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected first create status 429, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	record := repo.records["containers.create|containers:create|"+idemKey]
+	if record == nil || record.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("expected idempotency record to capture failed status, got %+v", record)
+	}
+
+	rr := doCreate()
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected retry with same key to create (201), got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if containerSvc.createCalls != 2 {
+		t.Fatalf("expected two create attempts, got %d", containerSvc.createCalls)
+	}
+}
+
+func TestFileUploadFailureReleasesIdempotencyKeyForRetry(t *testing.T) {
+	idemKey := "idem-upload-retry-after-failure"
+	repo := &handlerTestRepo{}
+	fileSvc := &failOnceFileService{failErr: files.ErrProviderFailure}
+	handler := NewFileHandler(fileSvc, 1024, idempotency.NewService(repo, time.Hour))
+
+	doUpload := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPut, "/v1/containers/c1/files/a.txt", strings.NewReader("hello"))
+		req.SetPathValue("id", "c1")
+		req.SetPathValue("path", "a.txt")
+		req.Header.Set(idempotency.HeaderName, idemKey)
+		rr := httptest.NewRecorder()
+		handler.Upload(rr, req)
+		return rr
+	}
+
+	if rr := doUpload(); rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected first upload status 503, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if rr := doUpload(); rr.Code != http.StatusCreated {
+		t.Fatalf("expected retry with same key to upload (201), got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if fileSvc.uploadCalls != 2 {
+		t.Fatalf("expected two upload attempts, got %d", fileSvc.uploadCalls)
+	}
+}
+
+type failOnceFileService struct {
+	noOpFileService
+	failErr error
+}
+
+func (s *failOnceFileService) Upload(ctx context.Context, externalID string, path string, r io.Reader) error {
+	if s.failErr != nil {
+		s.uploadCalls++
+		err := s.failErr
+		s.failErr = nil
+		return err
+	}
+	return s.noOpFileService.Upload(ctx, externalID, path, r)
 }
