@@ -610,8 +610,20 @@ func (r *EntContainerRepository) CountByState(ctx context.Context, state string)
 	return count, nil
 }
 
+// CountTotal counts containers that may still hold provider resources. Pruned
+// rows and failed rows that never received a provider reference are retained
+// as tombstones but excluded, otherwise they permanently consume total capacity.
 func (r *EntContainerRepository) CountTotal(ctx context.Context) (int, error) {
-	count, err := r.client.ContainerMetadata.Query().Count(ctx)
+	count, err := r.client.ContainerMetadata.
+		Query().
+		Where(
+			containermetadata.StateNEQ("pruned"),
+			containermetadata.Not(containermetadata.And(
+				containermetadata.StateEQ("failed"),
+				containermetadata.ProviderRefIsNil(),
+			)),
+		).
+		Count(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("count total containers: %w", err)
 	}
