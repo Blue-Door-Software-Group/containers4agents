@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     file \
     findutils \
     gawk \
+    graphviz \
     grep \
     jq \
     libmagic1 \
@@ -36,6 +37,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY images/runtime/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm -f /tmp/requirements.txt
+
+# draw.io helper CLI (see docs/DIAGRAM_TOOLS.md).
+COPY images/runtime/drawio-tool/ /usr/local/lib/drawio-tool/
+RUN ln -s /usr/local/lib/drawio-tool/drawio-tool /usr/local/bin/drawio-tool
 
 RUN useradd --create-home --uid 10001 --shell /bin/bash c4a && \
     mkdir -p /workspace && chown -R c4a:c4a /workspace /home/c4a

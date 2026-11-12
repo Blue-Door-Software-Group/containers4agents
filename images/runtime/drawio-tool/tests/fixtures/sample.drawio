@@ -1,0 +1,53 @@
+<mxfile host="test">
+  <diagram id="p1" name="Flow">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="10">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="start" value="Start" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="100" height="50" as="geometry" />
+        </mxCell>
+        <object id="check" label="&lt;b&gt;Check&lt;/b&gt;&lt;br&gt;input" owner="ops">
+          <mxCell style="rhombus;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+            <mxGeometry x="0" y="0" width="120" height="80" as="geometry" />
+          </mxCell>
+        </object>
+        <mxCell id="lane" value="Backend" style="swimlane;startSize=30;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="200" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="api" value="API" style="rounded=1;" vertex="1" parent="lane">
+          <mxGeometry x="0" y="0" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="db" value="DB" style="shape=cylinder3;" vertex="1" parent="lane">
+          <mxGeometry x="0" y="0" width="80" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="end" value="End" style="ellipse;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="100" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="start" target="check">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="300" y="300" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e1label" value="go" style="edgeLabel;" vertex="1" connectable="0" parent="e1">
+          <mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+        <mxCell id="e2" value="yes" edge="1" parent="1" source="check" target="api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="lane" source="api" target="db">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="lane" target="end">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="check" target="end">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="p2" name="Notes">
+    <mxGraphModel><root><mxCell id="0" /><mxCell id="1" parent="0" /><mxCell id="n" value="note" style="text;" vertex="1" parent="1"><mxGeometry x="10" y="10" width="60" height="20" as="geometry" /></mxCell></root></mxGraphModel>
+  </diagram>
+</mxfile>

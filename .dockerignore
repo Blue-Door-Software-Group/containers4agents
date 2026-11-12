@@ -10,3 +10,4 @@ coverage
 coverage.out
 **/*_test.go
 docs
+**/__pycache__

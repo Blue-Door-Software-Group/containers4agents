@@ -12,6 +12,7 @@ packages:
     - file
     - findutils
     - gawk
+    - graphviz
     - grep
     - jq
     - libmagic1
@@ -72,6 +73,11 @@ packages:
     - charset-normalizer
     - py7zr
     - zstandard
+tools:
+  drawio-tool:
+    path: /usr/local/bin/drawio-tool
+    source: images/runtime/drawio-tool/
+    docs: docs/DIAGRAM_TOOLS.md
 excluded_features:
   - ocr
 shell:
