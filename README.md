@@ -201,6 +201,7 @@ Control-plane image:
 Runtime image:
 
 - `ghcr.io/blue-door-software-group/containers4agents-runtime`
+- draw.io diagram CLI in the runtime image, and the optional diagrams image: `docs/DIAGRAM_TOOLS.md`
 
 Tagging and publish workflow details:
 
