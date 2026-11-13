@@ -14,7 +14,7 @@
 
 - `publish-control-plane-ghcr.yml`
 - `publish-runtime-ghcr.yml`
-- `pr-validation.yml`
+- `pr-validation.yml` (also builds the runtime image and smoke-tests `drawio-tool` in it)
 
 All publish workflows use:
 

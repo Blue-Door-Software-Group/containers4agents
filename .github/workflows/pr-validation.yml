@@ -62,6 +62,11 @@ jobs:
           context: .
           file: ./images/runtime/Dockerfile
           push: false
+          load: true
+          tags: c4a-runtime:ci
           platforms: linux/amd64
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Smoke test drawio-tool in runtime image
+        run: images/runtime/drawio-tool/tests/docker-smoke.sh c4a-runtime:ci
