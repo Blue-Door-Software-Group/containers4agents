@@ -1,0 +1,59 @@
+name: Publish containers4agents runtime-diagrams image to GHCR
+
+# The optional diagrams image (runtime + headless Chromium + draw.io, see
+# docs/DIAGRAM_TOOLS.md). It is built FROM the runtime image built in the same
+# job, with plain `docker build` so the second build sees the first, as in
+# diagrams-image-validation.yml. Point C4A_DOCKER_IMAGE at it to give sandboxes
+# drawio-tool render / from-mermaid / from-vsdx.
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "images/runtime/**"
+      - "images/runtime-diagrams/**"
+      - ".github/workflows/publish-runtime-diagrams-ghcr.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: blue-door-software-group/containers4agents-runtime-diagrams
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build runtime image
+        run: docker build -f images/runtime/Dockerfile -t c4a-runtime:build .
+
+      - name: Build runtime-diagrams image
+        run: >-
+          docker build -f images/runtime-diagrams/Dockerfile
+          --build-arg RUNTIME_IMAGE=c4a-runtime:build
+          --label org.opencontainers.image.revision=${{ github.sha }}
+          -t c4a-runtime-diagrams:build .
+
+      - name: Smoke test
+        run: images/runtime/drawio-tool/tests/docker-smoke.sh c4a-runtime-diagrams:build --diagrams
+
+      - name: Tag and push
+        run: |
+          image="${REGISTRY}/${IMAGE_NAME}"
+          short="$(git rev-parse --short=7 HEAD)"
+          for tag in v1 "sha-${short}" latest; do
+            docker tag c4a-runtime-diagrams:build "${image}:${tag}"
+            docker push "${image}:${tag}"
+          done
