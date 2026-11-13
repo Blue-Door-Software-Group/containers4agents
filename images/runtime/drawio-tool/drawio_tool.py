@@ -503,11 +503,24 @@ def set_geometry(cell, values):
         g.set(k, fmt(v))
 
 
+# Where a connector is pinned to its shapes. Fixed for the old positions (draw.io's Mermaid import
+# sets them for the direction it drew), so a layout that moves the shapes drops them, as it drops
+# waypoints, and the editor picks the sides again.
+CONNECTION_POINT_KEYS = ("exitX", "exitY", "exitDx", "exitDy", "exitPerimeter",
+                         "entryX", "entryY", "entryDx", "entryDy", "entryPerimeter")
+
+
+def without_style_keys(style, keys):
+    """style with the given keys removed, everything else kept as written."""
+    parts = [p for p in style.split(";") if p and p.split("=", 1)[0].strip() not in keys]
+    return ";".join(parts) + (";" if parts and style.endswith(";") else "")
+
+
 def layout_page(page, direction="TB"):
     g = Graph(page)
     source, nodes, clusters, edges, skipped = build_dot(g, direction)
     result = {"vertices": len(nodes), "containers": len(clusters), "edges": len(edges),
-              "skipped_edges": skipped, "cleared_waypoints": 0}
+              "skipped_edges": skipped, "cleared_waypoints": 0, "cleared_connection_points": 0}
     if not nodes:
         return result
     out = run_dot(source)
@@ -539,6 +552,11 @@ def layout_page(page, direction="TB"):
         if arr is not None:
             e.geometry.remove(arr)
             result["cleared_waypoints"] += 1
+        style = e.cell.get("style") or ""
+        unpinned = without_style_keys(style, CONNECTION_POINT_KEYS)
+        if unpinned != style:
+            e.cell.set("style", unpinned)
+            result["cleared_connection_points"] += 1
     return result
 
 
