@@ -101,9 +101,11 @@ Lays out one page with Graphviz `dot` (default direction `TB`). Containers
 (swimlanes, `container=1`, groups) become clusters and are resized around their
 children, leaving room for a swimlane's header (`startSize`, top or left).
 Writes only `mxGeometry` `x`/`y` (plus `width`/`height` of containers and of
-vertices that had no size) and removes the waypoints (`<Array as="points">`)
-of edges between laid-out cells. Every id, label, style and unknown
-element/attribute is kept. Left alone: edge labels and other relative cells,
+vertices that had no size), and for edges between laid-out cells removes the
+waypoints (`<Array as="points">`) and the connection points their style pins
+them to (`exitX`/`exitY`/`entryX`/`entryY` and their `Dx`/`Dy`/`Perimeter`
+keys, which were chosen for the old positions; draw.io's Mermaid import sets
+them). Every id, label, other style key and unknown element/attribute is kept. Left alone: edge labels and other relative cells,
 and the children of cells that manage their own layout (`childLayout=...`,
 tables) or are not containers. Edges whose ends are missing are counted in
 `skipped_edges`. The laid-out page is stored uncompressed; other pages are
@@ -111,7 +113,7 @@ untouched.
 
 ```json
 {"ok": true, "vertices": 5, "containers": 1, "edges": 5, "skipped_edges": 0,
- "cleared_waypoints": 1, "page": {"index": 0, "id": "p1", "name": "Flow", "compressed": false}}
+ "cleared_waypoints": 1, "cleared_connection_points": 0, "page": {"index": 0, "id": "p1", "name": "Flow", "compressed": false}}
 ```
 
 ### `render IN OUT [--format png|svg|pdf] [--page P] [--scale S] [--border PX] [--background COLOR]`

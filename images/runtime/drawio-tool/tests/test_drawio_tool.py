@@ -181,6 +181,19 @@ class LayoutTest(Base):
         cells = self.cells(doc)
         self.assertLess(cells["start"].rect()["x"], cells["check"].rect()["x"])
 
+    def test_connection_points_pinned_for_the_old_positions_are_dropped(self):
+        # As draw.io's Mermaid import writes a connector: pinned to sides chosen for left to right.
+        pinned = self.path("pinned.drawio")
+        with open(pinned, "w") as f:
+            f.write('<mxfile><diagram id="p" name="P"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>'
+                    '<mxCell id="a" value="A" vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>'
+                    '<mxCell id="b" value="B" vertex="1" parent="1"><mxGeometry x="200" y="0" width="80" height="40" as="geometry"/></mxCell>'
+                    '<mxCell id="e" edge="1" parent="1" source="a" target="b" style="curved=1;endArrow=block;exitX=1;exitY=0.5;entryX=0;entryY=0.5;entryDx=0;">'
+                    '<mxGeometry relative="1" as="geometry"/></mxCell></root></mxGraphModel></diagram></mxfile>')
+        result, doc = self.layout("--direction", "TB", source=pinned)
+        self.assertEqual(result["cleared_connection_points"], 1)
+        self.assertEqual(self.cells(doc)["e"].style_text, "curved=1;endArrow=block;")
+
     def test_other_pages_untouched(self):
         _, doc = self.layout()
         self.assertEqual(model_xml(doc.pages[1]), model_xml(dt.Document.load(SAMPLE).pages[1]))
@@ -210,6 +223,13 @@ class LayoutTest(Base):
         cells = self.cells(doc)
         self.assertEqual(cells["r"].rect(), {"x": 0, "y": 0, "width": 100, "height": 30})
         self.assertEqual(cells["t"].rect()["width"], 100)
+
+
+class StyleKeysTest(unittest.TestCase):
+    def test_removes_only_the_named_keys(self):
+        self.assertEqual(dt.without_style_keys("rounded=1;exitX=1;html=1;", dt.CONNECTION_POINT_KEYS), "rounded=1;html=1;")
+        self.assertEqual(dt.without_style_keys("exitX=1;entryY=0", dt.CONNECTION_POINT_KEYS), "")
+        self.assertEqual(dt.without_style_keys("edgeStyle=orthogonalEdgeStyle", dt.CONNECTION_POINT_KEYS), "edgeStyle=orthogonalEdgeStyle")
 
 
 class CliTest(Base):
