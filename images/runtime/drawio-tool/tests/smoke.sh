@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Smoke test for drawio-tool, run INSIDE a built image (see docker-smoke.sh).
-# Usage: smoke.sh [--diagrams]   (--diagrams also checks render/from-mermaid/from-vsdx)
+# Usage: smoke.sh
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 work=$(mktemp -d)
@@ -24,14 +24,6 @@ check inflate '.changed == 2' drawio-tool inflate packed.drawio sample.drawio
 check layout '.vertices == 5 and .containers == 1' drawio-tool layout sample.drawio laid-out.drawio --direction LR
 check layout-valid '.valid' drawio-tool validate laid-out.drawio
 
-if [[ "${1:-}" != "--diagrams" ]]; then
-  check render-unavailable '(.ok | not) and (.error | test("not available"))' drawio-tool render sample.drawio x.png
-  set +e; drawio-tool from-mermaid "$here/fixtures/flow.mmd" x.drawio >/dev/null; code=$?; set -e
-  [[ $code == 3 ]] || { echo "FAILED: from-mermaid exit code $code, want 3"; exit 1; }
-  echo "smoke test passed (default image)"
-  exit 0
-fi
-
 check capabilities-browser '.commands.render and .commands["from-mermaid"] and .commands["from-vsdx"]' \
   drawio-tool capabilities
 check from-mermaid '.ok and .vertices >= 4' drawio-tool from-mermaid "$here/fixtures/flow.mmd" flow.drawio
@@ -48,4 +40,4 @@ check from-vsdx '.ok and .vertices == 2' drawio-tool from-vsdx tiny.vsdx tiny.dr
 check vsdx-content '[.pages[0].elements[] | .label] | index("Alpha") != null' drawio-tool inspect tiny.drawio
 check vsdx-edge '[.pages[0].elements[] | select(.kind == "edge")] | length == 1' drawio-tool inspect tiny.drawio
 check bad-mermaid '.ok | not' drawio-tool from-mermaid "$here/fixtures/sample.drawio" bad.drawio
-echo "smoke test passed (diagrams image)"
+echo "smoke test passed"

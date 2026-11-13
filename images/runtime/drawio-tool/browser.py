@@ -49,7 +49,7 @@ window.call = (msg, events, ms) => {
 
 def status():
     if importlib.util.find_spec("playwright") is None:
-        return False, "Playwright is not installed (use the runtime-diagrams image)"
+        return False, "Playwright is not installed"
     if not os.path.isfile(os.path.join(WEBAPP, "index.html")):
         return False, f"draw.io web app not found at {WEBAPP}"
     browsers = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", os.path.expanduser("~/.cache/ms-playwright"))

@@ -1,16 +1,14 @@
 # Diagram tools (`drawio-tool`)
 
-`/usr/local/bin/drawio-tool` is a plain CLI baked into the sandbox images for
+`/usr/local/bin/drawio-tool` is a plain CLI baked into the runtime sandbox image for
 working with draw.io files (`.drawio`, the `mxfile` XML). Callers run it
 through the container exec API; there is no server and nothing runs between
 calls. Source: `images/runtime/drawio-tool/`.
 
-| Image | Commands |
-| --- | --- |
-| `containers4agents-runtime` (default) | `capabilities`, `inspect`, `validate`, `inflate`, `deflate`, `layout` |
-| `containers4agents-runtime-diagrams` (optional) | the above plus `render`, `from-mermaid`, `from-vsdx` |
-
-Call `capabilities` first and offer only the commands it reports as available.
+Commands: `capabilities`, `inspect`, `validate`, `inflate`, `deflate`,
+`layout` (Graphviz), and `render`, `from-mermaid`, `from-vsdx` (the draw.io web
+app in headless Chromium). `capabilities` reports any that cannot run, for
+example in an image built without the browser.
 
 ## Contract
 
@@ -36,7 +34,7 @@ then 0-based index; the default is the first page.
 {"ok": true, "version": "1",
  "commands": {"capabilities": true, "inspect": true, "validate": true, "inflate": true,
               "deflate": true, "layout": true, "render": false, "from-mermaid": false, "from-vsdx": false},
- "unavailable": {"render": "Playwright is not installed (use the runtime-diagrams image)", "...": "..."},
+ "unavailable": {"render": "Playwright is not installed", "...": "..."},
  "render_formats": []}
 ```
 
@@ -116,7 +114,7 @@ untouched.
  "cleared_waypoints": 1, "page": {"index": 0, "id": "p1", "name": "Flow", "compressed": false}}
 ```
 
-### `render IN OUT [--format png|svg|pdf] [--page P] [--scale S] [--border PX] [--background COLOR]` (diagrams image)
+### `render IN OUT [--format png|svg|pdf] [--page P] [--scale S] [--border PX] [--background COLOR]`
 
 Renders one page with the draw.io app. The format defaults to `OUT`'s
 extension. `--scale` defaults to 1, `--border` to 10 px. The background is
@@ -127,7 +125,7 @@ drawing, printed from draw.io's SVG with Chromium's PDF printer (vector text).
 {"ok": true, "format": "png", "bytes": 28254, "page": {"index": 0, "id": "p1", "name": "Flow", "compressed": false}}
 ```
 
-### `from-mermaid IN.mmd OUT.drawio` (diagrams image)
+### `from-mermaid IN.mmd OUT.drawio`
 
 Converts Mermaid source into **native draw.io shapes** (draw.io's own Mermaid
 converter, not an embedded image). Fails if the diagram type can only be
@@ -137,7 +135,7 @@ converted to an image or the source does not parse (`"error": "draw.io: ..."`).
 {"ok": true, "pages": 1, "vertices": 4}
 ```
 
-### `from-vsdx IN.vsdx OUT.drawio` (diagrams image)
+### `from-vsdx IN.vsdx OUT.drawio`
 
 Converts a Visio file with draw.io's in-browser Visio importer (`.vsdx`; also
 `.vssx` stencils and legacy binary `.vsd` by file extension). Same output shape
@@ -148,20 +146,18 @@ and need about 2 s each, most of it starting Chromium.
 
 ## Images
 
-**Default runtime image** (`images/runtime/`): adds Debian `graphviz` (2.43)
-and the script: 1.525 GB -> 1.573 GB (+48 MB, nearly all Graphviz and its
-libraries), measured locally with Docker 29, linux/amd64.
+**Runtime image** (`images/runtime/`) adds:
 
-**Diagrams image** (`images/runtime-diagrams/`, `FROM` the runtime image):
-
+- Debian `graphviz` (2.43) and the script (+48 MB, nearly all Graphviz).
 - draw.io web app from the pinned `draw.war` (v32.6.10, SHA-256 checked at
   build time) under `/opt/drawio`, without the Java parts, source maps,
   unminified sources and the integration bundle (86 MB).
 - Playwright for Python (pinned) and its headless Chromium shell under
   `/opt/ms-playwright`, plus only the shared libraries that shell needs.
 - `DRAWIO_WEBAPP=/opt/drawio`, `PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright`.
-- Measured the same way: 2.133 GB, i.e. +560 MB over the runtime image (Chromium 283 MB, Playwright with its Node.js
-  driver 165 MB, draw.io 86 MB, libraries ~25 MB).
+- In all, about +610 MB over the image without them (Chromium 283 MB, Playwright
+  with its Node.js driver 165 MB, draw.io 86 MB, Graphviz ~48 MB, libraries
+  ~25 MB), measured locally with Docker 29, linux/amd64.
 
 No network is needed at run time. The app is loaded under a made-up origin
 (`https://drawio.invalid`) whose requests are all answered from
@@ -175,20 +171,16 @@ Build locally from the repository root:
 
 ```bash
 docker build -f images/runtime/Dockerfile -t c4a-runtime:dev .
-docker build -f images/runtime-diagrams/Dockerfile --build-arg RUNTIME_IMAGE=c4a-runtime:dev \
-  -t c4a-runtime-diagrams:dev .
 ```
 
 ## Tests
 
 - Unit tests (no Docker; layout tests are skipped without `dot`):
   `python3 -m unittest discover -s images/runtime/drawio-tool/tests`
-- Image smoke tests, run under the sandbox restrictions (no network, uid 65534,
-  no capabilities):
-  `images/runtime/drawio-tool/tests/docker-smoke.sh c4a-runtime:dev` and
-  `images/runtime/drawio-tool/tests/docker-smoke.sh c4a-runtime-diagrams:dev --diagrams`.
-  The diagrams run converts a Mermaid flowchart, renders PNG/SVG/PDF and
-  imports a small generated `.vsdx` (`tests/fixtures/make_vsdx.py`).
+- Image smoke test, run under the sandbox restrictions (no network, uid 65534,
+  no capabilities): `images/runtime/drawio-tool/tests/docker-smoke.sh c4a-runtime:dev`.
+  Besides the file commands it converts a Mermaid flowchart, renders
+  PNG/SVG/PDF and imports a small generated `.vsdx` (`tests/fixtures/make_vsdx.py`).
 
 ## Licenses
 
@@ -197,7 +189,7 @@ docker build -f images/runtime-diagrams/Dockerfile --build-arg RUNTIME_IMAGE=c4a
   is called as a separate program. `graphviz2drawio` (GPL) is not used.
 - draw.io: Apache-2.0, shipped as `/opt/drawio/LICENSE` (also
   `/usr/share/doc/drawio/LICENSE`), copied from the v32.6.10 tag
-  (`images/runtime-diagrams/DRAWIO-LICENSE`).
+  (`images/runtime/DRAWIO-LICENSE`).
 - Playwright: Apache-2.0 (in its Python package metadata). Chromium headless
   shell: BSD-3-Clause and third-party notices, shipped by Playwright as
   `LICENSE.headless_shell` next to the binary.
