@@ -3,6 +3,9 @@ package docker
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -185,5 +188,55 @@ func TestUploadScriptDoesNotInjectThenSemicolon(t *testing.T) {
 	}
 	if !strings.Contains(script, "\n") {
 		t.Fatalf("upload script should use newline separators")
+	}
+}
+
+func TestUploadScriptCreatesWorkspaceFoldersOpenToTheExecUser(t *testing.T) {
+	lines := strings.Split(uploadScript(), "\n")
+	umaskAt, mkdirAt := -1, -1
+	for i, line := range lines {
+		switch {
+		case line == "umask 000":
+			umaskAt = i
+		case strings.HasPrefix(line, "mkdir -p"):
+			mkdirAt = i
+		}
+	}
+	if umaskAt < 0 || mkdirAt < 0 || umaskAt > mkdirAt {
+		t.Fatalf("upload script must set umask 000 before creating folders:\n%s", uploadScript())
+	}
+}
+
+// TestUploadedFoldersAreWritableByTheExecUser runs the upload script in the runtime image as the
+// image's user, then writes into the folder it made as the exec user (uid 65534), as the control
+// plane does. Docker and an image are needed: set C4A_DOCKER_TEST_IMAGE (CI sets it after building).
+func TestUploadedFoldersAreWritableByTheExecUser(t *testing.T) {
+	image := os.Getenv("C4A_DOCKER_TEST_IMAGE")
+	if image == "" {
+		t.Skip("set C4A_DOCKER_TEST_IMAGE to run against a runtime image")
+	}
+	name := fmt.Sprintf("c4a-upload-test-%d", time.Now().UnixNano())
+	run := func(stdin string, args ...string) (string, error) {
+		cmd := exec.Command("docker", args...)
+		cmd.Stdin = strings.NewReader(stdin)
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	if out, err := run("", "run", "-d", "--name", name, "--network", "none", "--entrypoint", "sh", image,
+		"-lc", "mkdir -p /workspace && chmod 0777 /workspace && sleep infinity"); err != nil {
+		t.Fatalf("start container: %v\n%s", err, out)
+	}
+	t.Cleanup(func() { _, _ = run("", "rm", "-f", name) })
+
+	// As the image's user, as the control plane's file scripts run.
+	if out, err := run("hello\n", "exec", "-i", name, "sh", "-lc", uploadScript(), "--", "site/css/app.css"); err != nil {
+		t.Fatalf("upload: %v\n%s", err, out)
+	}
+	// As the exec user: a new file in the folder the upload made, and an edit of the uploaded file.
+	if out, err := run("", "exec", "--user", "65534:65534", name, "sh", "-c",
+		"echo new > /workspace/site/css/extra.css && echo more >> /workspace/site/css/app.css && cat /workspace/site/css/app.css"); err != nil {
+		t.Fatalf("the exec user could not write into an uploaded folder: %v\n%s", err, out)
+	} else if out != "hello\nmore\n" {
+		t.Fatalf("unexpected file contents %q", out)
 	}
 }

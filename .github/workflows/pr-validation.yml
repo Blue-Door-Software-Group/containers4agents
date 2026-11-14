@@ -70,3 +70,15 @@ jobs:
 
       - name: Smoke test drawio-tool in runtime image
         run: images/runtime/drawio-tool/tests/docker-smoke.sh c4a-runtime:ci
+
+      # Uploads run as the image's user and commands as uid 65534: a folder an upload made must
+      # take new files from commands (internal/provider/docker's upload script, umask 000).
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Uploaded folders are writable by the exec user
+        env:
+          C4A_DOCKER_TEST_IMAGE: c4a-runtime:ci
+        run: go test ./internal/provider/docker/ -run TestUploadedFoldersAreWritableByTheExecUser -count=1 -v

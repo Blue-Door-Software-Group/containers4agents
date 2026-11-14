@@ -257,9 +257,14 @@ func (p *Provider) UploadFile(ctx context.Context, providerRef string, path stri
 	return nil
 }
 
+// uploadScript writes stdin to /workspace/$1. It runs as the image's user while commands run as
+// the exec user (another uid), so it creates folders and files with umask 000: a folder an upload
+// made must take new files from commands, and an uploaded file must be editable in place by them.
+// The workspace is the sandbox's own; nothing outside it is reachable either way.
 func uploadScript() string {
 	return strings.Join([]string{
 		"set -eu",
+		"umask 000",
 		`rel="$1"`,
 		`dest="/workspace/$rel"`,
 		`parent=$(dirname "$dest")`,
