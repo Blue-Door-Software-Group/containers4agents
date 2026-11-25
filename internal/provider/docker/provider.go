@@ -822,6 +822,9 @@ func (p *Provider) runFileScript(
 // this network (metadata IPs, RFC1918, link-local, control planes).
 const EgressNetworkName = "c4a-egress"
 
+// EgressBridgeName is the egress network's bridge interface on the host.
+const EgressBridgeName = "c4a-egress0"
+
 func networkLabel(mode string) string {
 	if mode == types.NetworkEgress {
 		return types.NetworkEgress
@@ -858,6 +861,8 @@ func (p *Provider) ensureEgressNetwork(ctx context.Context) error {
 		Options: map[string]string{
 			"com.docker.network.bridge.enable_icc":           "false",
 			"com.docker.network.bridge.enable_ip_masquerade": "true",
+			// A fixed interface name, so scripts/egress-firewall.sh can close the host's INPUT to it.
+			"com.docker.network.bridge.name": EgressBridgeName,
 		},
 		Labels: map[string]string{"c4a.network": types.NetworkEgress},
 	})

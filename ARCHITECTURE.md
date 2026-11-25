@@ -240,7 +240,7 @@ stateDiagram-v2
 ### Network policy
 
 - No inbound network for agent containers, ever, and no published ports.
-- No outbound network by default. An image registered in the resource policy with `network: egress` joins the `c4a-egress` bridge network (no traffic between its containers). Docker cannot deny destinations by itself: `scripts/egress-firewall.sh` installs `DOCKER-USER` rules dropping the metadata IPs, RFC1918, carrier-grade NAT and link-local ranges and configured control-plane hosts, and c4a warns at startup when an egress image is registered without them.
+- No outbound network by default. An image registered in the resource policy with `network: egress` joins the `c4a-egress` bridge network (no traffic between its containers). Docker cannot deny destinations by itself: `scripts/egress-firewall.sh` installs `DOCKER-USER` rules (forwarded traffic) dropping the metadata IPs, RFC1918, carrier-grade NAT and link-local ranges and configured control-plane hosts, and `INPUT` rules closing the Docker host itself (its bridge gateway and own addresses, where c4a and neighbouring services listen) to new connections from the egress bridge (`c4a-egress0`). c4a warns at startup when an egress image is registered without both.
 - Callers choose a registered image by name; the network comes from the registry, never from the request.
 - No dependency on sandbox network reachability for exec/file functionality.
 

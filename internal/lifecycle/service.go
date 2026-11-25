@@ -145,6 +145,9 @@ func (s *Service) CreateContainer(ctx context.Context, opts CreateOptions) (*Con
 	externalID := opts.ExternalID
 	if externalID == "" {
 		externalID = uuid.NewString()
+	} else if err := s.removeFailedSandbox(ctx, externalID); err != nil {
+		outcome = "provider_failure"
+		return nil, err
 	}
 	imageName := ""
 	if len(s.cfg.Images) > 0 {
@@ -246,6 +249,26 @@ func (s *Service) CreateContainer(ctx context.Context, opts CreateOptions) (*Con
 	outcome = "success"
 	s.refreshContainerCountMetrics(ctx)
 	return s.view(updated), nil
+}
+
+// removeFailedSandbox removes what a failed container with externalID may still have in the
+// provider (a stop that failed leaves it running) before its id is reused, so replacing the row
+// cannot orphan a sandbox. A pruned row has nothing left.
+func (s *Service) removeFailedSandbox(ctx context.Context, externalID string) error {
+	row, err := s.repo.GetByExternalID(ctx, externalID)
+	if errors.Is(err, repository.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("lookup container %q: %w", externalID, err)
+	}
+	if row.State != StateFailed || row.ProviderRef == nil || *row.ProviderRef == "" {
+		return nil
+	}
+	if err := s.provider.PruneSandbox(ctx, *row.ProviderRef); err != nil && !errors.Is(err, types.ErrProviderNotFound) {
+		return fmt.Errorf("%w: remove the failed container before reusing its id: %w", ErrProviderFailure, err)
+	}
+	return nil
 }
 
 // liveContainer is the container with externalID when it exists and is not pruned or failed;

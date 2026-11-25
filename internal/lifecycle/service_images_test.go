@@ -139,3 +139,30 @@ func TestCreateContainer_NoRegistryStoresNoImageName(t *testing.T) {
 		t.Fatalf("params %+v spec %+v view %+v", created, spec, view)
 	}
 }
+
+// prunedProvider records the sandboxes it prunes.
+type prunedProvider struct {
+	specProvider
+	pruned *[]string
+}
+
+func (p prunedProvider) PruneSandbox(_ context.Context, ref string) error {
+	*p.pruned = append(*p.pruned, ref)
+	return nil
+}
+
+// Reusing a failed container's id removes what the provider still has of it first.
+func TestCreateContainer_ReusingAFailedIDRemovesItsSandbox(t *testing.T) {
+	ref := "docker-old"
+	rows := map[string]*repository.Container{"swarm-u-p": {ExternalID: "swarm-u-p", State: StateFailed, ProviderRef: &ref}}
+	var created repository.CreateParams
+	var spec types.SandboxSpec
+	var pruned []string
+	svc := NewService(memRepo(rows, &created), prunedProvider{specProvider: specProvider{spec: &spec}, pruned: &pruned}, imagesConfig())
+	if _, err := svc.CreateContainer(context.Background(), CreateOptions{Image: "swarm-dev", ExternalID: "swarm-u-p"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(pruned) != 1 || pruned[0] != "docker-old" {
+		t.Fatalf("pruned %v", pruned)
+	}
+}

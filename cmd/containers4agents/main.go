@@ -356,11 +356,17 @@ func maxUploadBytes(cfg config.Config) int {
 func egressRulesInstalled() (installed, ok bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "iptables", "-S", "DOCKER-USER").Output()
-	if err != nil {
-		return false, false
+	// Both chains: DOCKER-USER (forwarded traffic) and INPUT (the host itself).
+	for _, chain := range []string{"DOCKER-USER", "INPUT"} {
+		out, err := exec.CommandContext(ctx, "iptables", "-S", chain).Output()
+		if err != nil {
+			return false, false
+		}
+		if !strings.Contains(string(out), "c4a-egress") {
+			return false, true
+		}
 	}
-	return strings.Contains(string(out), "c4a-egress"), true
+	return true, true
 }
 
 // warnUnguardedEgress warns when an image has egress but the deny rules for it are not installed:
