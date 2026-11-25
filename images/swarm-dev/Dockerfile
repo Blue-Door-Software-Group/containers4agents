@@ -34,10 +34,16 @@ ENV PATH=/usr/local/go/bin:/workspace/.go/bin:$PATH \
     GOFLAGS=-modcacherw \
     npm_config_cache=/workspace/.cache/npm \
     XDG_CACHE_HOME=/workspace/.cache \
+    GOTMPDIR=/workspace/.cache/go-tmp \
     GIT_TERMINAL_PROMPT=0
 
-# Login shells (exec runs `bash -lc`) reset PATH from /etc/profile: keep the toolchain on it.
-RUN printf '%s\n' 'export PATH=/usr/local/go/bin:/workspace/.go/bin:$PATH' > /etc/profile.d/10-swarm-dev.sh
+# Login shells (exec runs `sh -lc`/`bash -lc`) reset PATH from /etc/profile: keep the toolchain on
+# it, and create HOME and Go's temp dir in the workspace (/tmp is mounted noexec, so test binaries
+# built there could not run).
+RUN printf '%s\n' \
+    'export PATH=/usr/local/go/bin:/workspace/.go/bin:$PATH' \
+    'mkdir -p "$HOME" "$GOTMPDIR" 2>/dev/null || true' \
+    > /etc/profile.d/10-swarm-dev.sh
 
 WORKDIR /workspace
 USER c4a

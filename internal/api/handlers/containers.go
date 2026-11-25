@@ -208,8 +208,13 @@ func (h *ContainerHandler) replayCreateResponseIfLive(ctx context.Context, begin
 		return false, nil
 	}
 
-	_, err := h.service.GetContainer(ctx, containerID)
+	current, err := h.service.GetContainer(ctx, containerID)
 	if err == nil {
+		// A pruned or failed container is a tombstone, not the container the stored response
+		// named: create again (its caller-chosen id may be reused).
+		if current != nil && (current.State == lifecycle.StatePruned || current.State == lifecycle.StateFailed) {
+			return false, nil
+		}
 		writeReplay(w, begin.StatusCode, begin.ResponseBody)
 		return true, nil
 	}
