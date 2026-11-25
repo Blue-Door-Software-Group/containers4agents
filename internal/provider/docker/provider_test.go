@@ -2,6 +2,7 @@ package docker
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -238,5 +239,24 @@ func TestUploadedFoldersAreWritableByTheExecUser(t *testing.T) {
 		t.Fatalf("the exec user could not write into an uploaded folder: %v\n%s", err, out)
 	} else if out != "hello\nmore\n" {
 		t.Fatalf("unexpected file contents %q", out)
+	}
+}
+
+func TestNetworkModeWithoutEgress(t *testing.T) {
+	p := &Provider{}
+	for _, mode := range []string{"", types.NetworkNone} {
+		got, err := p.networkMode(context.Background(), mode)
+		if err != nil || got != "none" {
+			t.Fatalf("%q: %v %v", mode, got, err)
+		}
+	}
+	if _, err := p.networkMode(context.Background(), "host"); err == nil {
+		t.Fatal("an unknown mode is refused, never passed to Docker")
+	}
+	if got := execEnv(map[string]string{"B": "2", "A": "1"}); len(got) != 2 || got[0] != "A=1" || got[1] != "B=2" {
+		t.Fatalf("execEnv %v", got)
+	}
+	if execEnv(nil) != nil {
+		t.Fatal("no env is nil")
 	}
 }

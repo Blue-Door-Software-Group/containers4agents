@@ -13,7 +13,7 @@ This architecture is derived from `REQUIREMENTS.md` and intentionally keeps Dock
 ### v1 goals
 
 - Keep the public API stable while allowing provider swaps later.
-- Enforce strict sandbox isolation: no outbound/inbound network from agent containers, bounded resources, and no privileged execution.
+- Enforce strict sandbox isolation: no inbound network, no outbound network unless the operator registers an image with egress, bounded resources, and no privileged execution.
 - Preserve resumable stopped containers and explicit permanent prune semantics.
 - Provide metadata-only observability, structured errors, and request correlation.
 - Support Docker-first deployment in the existing Portainer-managed lab environment.
@@ -239,8 +239,15 @@ stateDiagram-v2
 
 ### Network policy
 
-- No inbound/outbound network for agent containers.
+- No inbound network for agent containers, ever, and no published ports.
+- No outbound network by default. An image registered in the resource policy with `network: egress` joins the `c4a-egress` bridge network (no traffic between its containers). Docker cannot deny destinations by itself: `scripts/egress-firewall.sh` installs `DOCKER-USER` rules dropping the metadata IPs, RFC1918, carrier-grade NAT and link-local ranges and configured control-plane hosts, and c4a warns at startup when an egress image is registered without them.
+- Callers choose a registered image by name; the network comes from the registry, never from the request.
 - No dependency on sandbox network reachability for exec/file functionality.
+
+### Images and per-image settings
+
+- `resource-policy.yaml` may register images (`images:` with `ref`, `profile`, `network`, and optional idle-stop and retention times) and name a `default_image`. Without a registry there is one implicit image, `runtime`: `C4A_DOCKER_IMAGE` under the active profile, which is the behaviour before images existed.
+- Each registered image resolves at startup into the settings its containers run with (`config.Image`). The lifecycle, execution and files services read a container's own image settings (`Config.ForImage(row.image_name)`) for limits and deadlines; rows from before images read as the default image.
 - Provider performs management operations externally.
 
 ### Data protection and logging

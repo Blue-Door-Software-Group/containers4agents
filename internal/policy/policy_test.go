@@ -98,3 +98,35 @@ profiles:
 		t.Fatal("expected validation error for invalid policy file")
 	}
 }
+
+func TestValidateImages(t *testing.T) {
+	base := Defaults()
+	dev := base.Profiles[DefaultProfileName]
+	base.Profiles["dev-egress"] = dev
+	ok := base
+	ok.Images = map[string]ImageSpec{"swarm-dev": {Ref: "img:1", Profile: "dev-egress", Network: "egress", IdleStopTimeout: "6h"}}
+	ok.DefaultImage = "swarm-dev"
+	if err := Validate(ok); err != nil {
+		t.Fatal(err)
+	}
+	broken := map[string]ImageSpec{
+		"Bad Name":  {Ref: "img:1"},
+		"no-ref":    {},
+		"no-prof":   {Ref: "img:1", Profile: "missing"},
+		"net":       {Ref: "img:1", Network: "host"},
+		"idle":      {Ref: "img:1", IdleStopTimeout: "soon"},
+		"retention": {Ref: "img:1", StoppedRetentionTimeout: "-1h"},
+	}
+	for name, spec := range broken {
+		p := base
+		p.Images = map[string]ImageSpec{name: spec}
+		if err := Validate(p); err == nil {
+			t.Fatalf("%s: want an error", name)
+		}
+	}
+	p := base
+	p.DefaultImage = "unknown"
+	if err := Validate(p); err == nil {
+		t.Fatal("unknown default_image")
+	}
+}

@@ -44,6 +44,8 @@ const (
 	FieldLastPruneError = "last_prune_error"
 	// FieldExecInProgress holds the string denoting the exec_in_progress field in the database.
 	FieldExecInProgress = "exec_in_progress"
+	// FieldImageName holds the string denoting the image_name field in the database.
+	FieldImageName = "image_name"
 	// Table holds the table name of the containermetadata in the database.
 	Table = "container_metadata"
 )
@@ -66,6 +68,7 @@ var Columns = []string{
 	FieldNextPruneRetryAt,
 	FieldLastPruneError,
 	FieldExecInProgress,
+	FieldImageName,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -182,4 +185,9 @@ func ByLastPruneError(opts ...sql.OrderTermOption) OrderOption {
 // ByExecInProgress orders the results by the exec_in_progress field.
 func ByExecInProgress(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldExecInProgress, opts...).ToFunc()
+}
+
+// ByImageName orders the results by the image_name field.
+func ByImageName(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldImageName, opts...).ToFunc()
 }

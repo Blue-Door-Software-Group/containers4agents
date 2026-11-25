@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"regexp"
+	"strings"
 
 	apierrors "github.com/Blue-Door-Software-Group/containers4agents/internal/api/errors"
 	"github.com/Blue-Door-Software-Group/containers4agents/internal/api/middleware"
@@ -12,7 +14,7 @@ import (
 )
 
 type ExecutionService interface {
-	Execute(ctx context.Context, externalID string, command []string) (*execution.Result, error)
+	Execute(ctx context.Context, externalID string, command []string, env map[string]string) (*execution.Result, error)
 }
 
 type ExecutionHandler struct {
@@ -25,6 +27,37 @@ func NewExecutionHandler(service ExecutionService) *ExecutionHandler {
 
 type execRequest struct {
 	Command []string `json:"command"`
+	// Env is extra environment for this command only (optional; never logged).
+	Env map[string]string `json:"env,omitempty"`
+}
+
+// Exec env limits.
+const (
+	maxExecEnvEntries = 64
+	maxExecEnvBytes   = 64 << 10
+)
+
+var execEnvNamePattern = regexp.MustCompile(`^[A-Z_][A-Z0-9_]{0,63}$`)
+
+// validateExecEnv checks an exec's env: names, count and total size.
+func validateExecEnv(env map[string]string) string {
+	if len(env) > maxExecEnvEntries {
+		return "env has too many entries"
+	}
+	total := 0
+	for k, v := range env {
+		if !execEnvNamePattern.MatchString(k) {
+			return "env names must match ^[A-Z_][A-Z0-9_]{0,63}$"
+		}
+		if strings.ContainsRune(v, 0) {
+			return "env values must not contain NUL"
+		}
+		total += len(k) + len(v)
+	}
+	if total > maxExecEnvBytes {
+		return "env is too large"
+	}
+	return ""
 }
 
 type execResponse struct {
@@ -58,7 +91,12 @@ func (h *ExecutionHandler) Exec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.service.Execute(r.Context(), externalID, body.Command)
+	if msg := validateExecEnv(body.Env); msg != "" {
+		apierrors.Write(w, middleware.GetRequestID(r.Context()), apierrors.BadRequest(msg))
+		return
+	}
+
+	result, err := h.service.Execute(r.Context(), externalID, body.Command, body.Env)
 	if err != nil {
 		writeExecutionError(w, r, err)
 		return

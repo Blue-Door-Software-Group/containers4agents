@@ -17,6 +17,10 @@ import (
 )
 
 var (
+	// ErrUnknownImage: the create named an image the server has not registered.
+	ErrUnknownImage = errors.New("unknown image")
+	// ErrContainerExists: the create's external id names a live container (see ExistsError).
+	ErrContainerExists   = errors.New("container already exists")
 	ErrContainerNotFound = errors.New("container not found")
 	ErrStateConflict     = errors.New("container state conflict")
 	ErrProviderFailure   = errors.New("provider failure")
@@ -30,11 +34,35 @@ type Service struct {
 	metrics  *obsmetrics.Metrics
 }
 
+// CreateOptions are a create's optional choices; the zero value is the create before images
+// existed: the default image and a server-generated id.
+type CreateOptions struct {
+	// Image is a registered image name; empty means the default image.
+	Image string
+	// ExternalID is the caller's id for the container; empty means a generated UUID. A pruned or
+	// failed container's id may be reused.
+	ExternalID string
+	// ReturnExisting returns a live container that already has ExternalID instead of failing
+	// with an ExistsError.
+	ReturnExisting bool
+}
+
+// ExistsError is ErrContainerExists with the existing container.
+type ExistsError struct{ View *ContainerView }
+
+func (e *ExistsError) Error() string { return ErrContainerExists.Error() }
+func (e *ExistsError) Unwrap() error { return ErrContainerExists }
+
 type ContainerView struct {
-	ExternalID               string
-	State                    string
-	Profile                  string
-	ImageVersion             string
+	ExternalID   string
+	State        string
+	Profile      string
+	ImageVersion string
+	// ImageName is the registered image ("" on rows from before images) and Network its mode.
+	ImageName string
+	Network   string
+	// Existed: CreateContainer returned an existing container (ReturnExisting).
+	Existed                  bool
 	CreatedAt                time.Time
 	UpdatedAt                time.Time
 	LastActivityAt           *time.Time
@@ -59,12 +87,32 @@ func NewService(repo repository.ContainerRepository, provider types.ContainerPro
 	}
 }
 
-func (s *Service) CreateContainer(ctx context.Context) (*ContainerView, error) {
+func (s *Service) CreateContainer(ctx context.Context, opts CreateOptions) (*ContainerView, error) {
 	started := time.Now()
 	outcome := "internal_error"
 	defer func() {
 		s.observeLifecycle("create", outcome, time.Since(started))
 	}()
+
+	img, ok := s.cfg.Image(opts.Image)
+	if !ok {
+		outcome = "invalid_request"
+		return nil, fmt.Errorf("%w: %q", ErrUnknownImage, opts.Image)
+	}
+	settings := img.Settings
+	if opts.ExternalID != "" {
+		if existing, err := s.liveContainer(ctx, opts.ExternalID); err != nil || existing != nil {
+			if err != nil {
+				return nil, err
+			}
+			outcome = "exists"
+			if opts.ReturnExisting {
+				existing.Existed = true
+				return existing, nil
+			}
+			return nil, &ExistsError{View: existing}
+		}
+	}
 
 	if err := s.ensureCapacityForCreate(ctx); err != nil {
 		if errors.Is(err, ErrCapacityExceeded) {
@@ -94,12 +142,35 @@ func (s *Service) CreateContainer(ctx context.Context) (*ContainerView, error) {
 		return nil, fmt.Errorf("%w: total container limit reached", ErrCapacityExceeded)
 	}
 
-	externalID := uuid.NewString()
+	externalID := opts.ExternalID
+	if externalID == "" {
+		externalID = uuid.NewString()
+	}
+	imageName := ""
+	if len(s.cfg.Images) > 0 {
+		imageName = img.Name
+	}
 	row, err := s.repo.Create(ctx, repository.CreateParams{
-		ExternalID:   externalID,
-		Profile:      s.cfg.DefaultProfile,
-		ImageVersion: s.cfg.ActiveImageVersion,
+		ExternalID:      externalID,
+		Profile:         settings.DefaultProfile,
+		ImageVersion:    s.cfg.ActiveImageVersion,
+		ImageName:       imageName,
+		ReplaceTerminal: opts.ExternalID != "",
 	})
+	if errors.Is(err, repository.ErrExternalIDTaken) {
+		// A concurrent create took the id first: it exists now.
+		existing, getErr := s.liveContainer(ctx, externalID)
+		if getErr != nil || existing == nil {
+			outcome = "state_conflict"
+			return nil, fmt.Errorf("%w: external id in use", ErrStateConflict)
+		}
+		outcome = "exists"
+		if opts.ReturnExisting {
+			existing.Existed = true
+			return existing, nil
+		}
+		return nil, &ExistsError{View: existing}
+	}
 	if err != nil {
 		outcome = "internal_error"
 		return nil, fmt.Errorf("create metadata row: %w", err)
@@ -107,19 +178,20 @@ func (s *Service) CreateContainer(ctx context.Context) (*ContainerView, error) {
 
 	providerContainer, err := s.provider.CreateSandbox(ctx, types.SandboxSpec{
 		ExternalID:   externalID,
-		Profile:      s.cfg.DefaultProfile,
+		Profile:      settings.DefaultProfile,
 		ImageVersion: s.cfg.ActiveImageVersion,
-		Image:        s.cfg.DockerImage,
+		Image:        settings.DockerImage,
+		Network:      img.Network,
 		Runtime: types.RuntimeOptions{
-			CPUMaxCores:         s.cfg.ContainerCPUMaxCores,
-			MemoryMaxBytes:      s.cfg.ContainerMemoryMaxBytes,
-			TmpDiskMaxBytes:     s.cfg.ContainerTmpDiskMaxBytes,
-			PIDsMax:             s.cfg.ContainerPIDsMax,
-			ExecUser:            s.cfg.ContainerExecUser,
-			DropAllCapabilities: s.cfg.ContainerDropAllCapabilities,
-			NoNewPrivileges:     s.cfg.ContainerNoNewPrivileges,
-			ReadOnlyRootFS:      s.cfg.ContainerReadOnlyRootFS,
-			SeccompProfilePath:  s.cfg.ContainerSeccompProfilePath,
+			CPUMaxCores:         settings.ContainerCPUMaxCores,
+			MemoryMaxBytes:      settings.ContainerMemoryMaxBytes,
+			TmpDiskMaxBytes:     settings.ContainerTmpDiskMaxBytes,
+			PIDsMax:             settings.ContainerPIDsMax,
+			ExecUser:            settings.ContainerExecUser,
+			DropAllCapabilities: settings.ContainerDropAllCapabilities,
+			NoNewPrivileges:     settings.ContainerNoNewPrivileges,
+			ReadOnlyRootFS:      settings.ContainerReadOnlyRootFS,
+			SeccompProfilePath:  settings.ContainerSeccompProfilePath,
 		},
 	})
 	if err != nil {
@@ -150,7 +222,7 @@ func (s *Service) CreateContainer(ctx context.Context) (*ContainerView, error) {
 		return nil, err
 	}
 	now := time.Now().UTC()
-	idleDeadline := now.Add(s.cfg.IdleStopTimeout)
+	idleDeadline := now.Add(settings.IdleStopTimeout)
 	updated, err := s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
 		ExternalID:                  externalID,
 		State:                       next,
@@ -173,7 +245,23 @@ func (s *Service) CreateContainer(ctx context.Context) (*ContainerView, error) {
 	}
 	outcome = "success"
 	s.refreshContainerCountMetrics(ctx)
-	return mapContainer(updated), nil
+	return s.view(updated), nil
+}
+
+// liveContainer is the container with externalID when it exists and is not pruned or failed;
+// nil when there is none (or only a terminal row, whose id may be reused).
+func (s *Service) liveContainer(ctx context.Context, externalID string) (*ContainerView, error) {
+	row, err := s.repo.GetByExternalID(ctx, externalID)
+	if errors.Is(err, repository.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("lookup container %q: %w", externalID, err)
+	}
+	if row.State == StatePruned || row.State == StateFailed {
+		return nil, nil
+	}
+	return s.view(row), nil
 }
 
 func (s *Service) GetContainer(ctx context.Context, externalID string) (*ContainerView, error) {
@@ -185,7 +273,7 @@ func (s *Service) GetContainer(ctx context.Context, externalID string) (*Contain
 		return nil, fmt.Errorf("load metadata row: %w", err)
 	}
 
-	return mapContainer(row), nil
+	return s.view(row), nil
 }
 
 func (s *Service) StopContainer(ctx context.Context, externalID string) (*ContainerView, error) {
@@ -251,7 +339,7 @@ func (s *Service) StopContainer(ctx context.Context, externalID string) (*Contai
 		return nil, err
 	}
 	now := time.Now().UTC()
-	retentionDeadline := now.Add(s.cfg.StoppedRetentionTimeout)
+	retentionDeadline := now.Add(s.cfg.ForImage(row.ImageName).StoppedRetentionTimeout)
 	updated, err := s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
 		ExternalID:               row.ExternalID,
 		State:                    stoppedState,
@@ -269,7 +357,7 @@ func (s *Service) StopContainer(ctx context.Context, externalID string) (*Contai
 	}
 	outcome = "success"
 	s.refreshContainerCountMetrics(ctx)
-	return mapContainer(updated), nil
+	return s.view(updated), nil
 }
 
 func (s *Service) StartContainer(ctx context.Context, externalID string) (*ContainerView, error) {
@@ -343,7 +431,7 @@ func (s *Service) StartContainer(ctx context.Context, externalID string) (*Conta
 		return nil, err
 	}
 	now := time.Now().UTC()
-	idleDeadline := now.Add(s.cfg.IdleStopTimeout)
+	idleDeadline := now.Add(s.cfg.ForImage(row.ImageName).IdleStopTimeout)
 	updated, err := s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
 		ExternalID:                  row.ExternalID,
 		State:                       runningState,
@@ -364,7 +452,7 @@ func (s *Service) StartContainer(ctx context.Context, externalID string) (*Conta
 	}
 	outcome = "success"
 	s.refreshContainerCountMetrics(ctx)
-	return mapContainer(updated), nil
+	return s.view(updated), nil
 }
 
 func (s *Service) PruneContainer(ctx context.Context, externalID string) (*ContainerView, error) {
@@ -456,7 +544,16 @@ func (s *Service) PruneContainer(ctx context.Context, externalID string) (*Conta
 	}
 	outcome = "success"
 	s.refreshContainerCountMetrics(ctx)
-	return mapContainer(updated), nil
+	return s.view(updated), nil
+}
+
+// view is c as clients see it, with its image's name and network.
+func (s *Service) view(c *repository.Container) *ContainerView {
+	v := mapContainer(c)
+	if img, ok := s.cfg.Image(c.ImageName); ok {
+		v.ImageName, v.Network = img.Name, img.Network
+	}
+	return v
 }
 
 func mapContainer(c *repository.Container) *ContainerView {

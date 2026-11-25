@@ -76,20 +76,20 @@ func (s *Service) Upload(ctx context.Context, externalID string, requestedPath s
 		s.logProviderFailure(ctx, "files.read_usage", err)
 		return s.mapProviderErr(err)
 	}
-	if s.cfg.ContainerFileCountMax > 0 && usage.FileCount >= s.cfg.ContainerFileCountMax {
+	if s.settings(row).ContainerFileCountMax > 0 && usage.FileCount >= s.settings(row).ContainerFileCountMax {
 		outcome = "quota"
 		return fmt.Errorf("%w: file count limit reached", ErrPayloadTooLarge)
 	}
 
-	remainingQuota := int64(s.cfg.FileMaxUploadBytes)
-	if s.cfg.WorkspaceDiskQuotaBytes > 0 {
-		remainingQuota = s.cfg.WorkspaceDiskQuotaBytes - usage.WorkspaceBytes
+	remainingQuota := int64(s.settings(row).FileMaxUploadBytes)
+	if s.settings(row).WorkspaceDiskQuotaBytes > 0 {
+		remainingQuota = s.settings(row).WorkspaceDiskQuotaBytes - usage.WorkspaceBytes
 		if remainingQuota <= 0 {
 			outcome = "quota"
 			return ErrDiskQuotaExceeded
 		}
 	}
-	uploadLimit := int64(s.cfg.FileMaxUploadBytes)
+	uploadLimit := int64(s.settings(row).FileMaxUploadBytes)
 	if remainingQuota < uploadLimit {
 		uploadLimit = remainingQuota
 	}
@@ -110,7 +110,7 @@ func (s *Service) Upload(ctx context.Context, externalID string, requestedPath s
 		s.logProviderFailure(ctx, "files.upload", err)
 		return s.mapProviderErr(err)
 	}
-	s.touchActivity(ctx, row.ExternalID, row.State)
+	s.touchActivity(ctx, row, row.State)
 	outcome = "success"
 	return nil
 }
@@ -129,7 +129,7 @@ func (s *Service) Download(ctx context.Context, externalID string, requestedPath
 		return err
 	}
 
-	limitedWriter := newMaxBytesWriter(countingWriter, int64(s.cfg.FileMaxDownloadBytes))
+	limitedWriter := newMaxBytesWriter(countingWriter, int64(s.settings(row).FileMaxDownloadBytes))
 	err = s.provider.DownloadFile(ctx, providerRef, path, limitedWriter)
 	if err != nil {
 		if errors.Is(err, errExceededMaxBytes) {
@@ -142,7 +142,7 @@ func (s *Service) Download(ctx context.Context, externalID string, requestedPath
 		return s.mapProviderErr(err)
 	}
 
-	s.touchActivity(ctx, row.ExternalID, row.State)
+	s.touchActivity(ctx, row, row.State)
 	outcome = "success"
 	return nil
 }
@@ -158,7 +158,7 @@ func (s *Service) Delete(ctx context.Context, externalID string, requestedPath s
 		s.logProviderFailure(ctx, "files.delete", err)
 		return s.mapProviderErr(err)
 	}
-	s.touchActivity(ctx, row.ExternalID, row.State)
+	s.touchActivity(ctx, row, row.State)
 	return nil
 }
 
@@ -191,13 +191,13 @@ func (s *Service) Manifest(ctx context.Context, externalID string) (*Manifest, e
 		return 0
 	})
 
-	s.touchActivity(ctx, row.ExternalID, row.State)
+	s.touchActivity(ctx, row, row.State)
 	s.observeWorkspaceUsage(usage.WorkspaceBytes, usage.FileCount)
 	return &Manifest{
 		ContainerID:        row.ExternalID,
 		Entries:            entries,
 		WorkspaceBytesUsed: usage.WorkspaceBytes,
-		WorkspaceDiskQuota: s.cfg.WorkspaceDiskQuotaBytes,
+		WorkspaceDiskQuota: s.settings(row).WorkspaceDiskQuotaBytes,
 		WorkspaceFileCount: usage.FileCount,
 	}, nil
 }
@@ -255,7 +255,9 @@ func (s *Service) mapProviderErr(err error) error {
 	}
 }
 
-func (s *Service) touchActivity(ctx context.Context, externalID string, expectedState string) {
+func (s *Service) touchActivity(ctx context.Context, row *repository.Container, expectedState string) {
+	externalID := row.ExternalID
+	settings := s.settings(row)
 	now := time.Now().UTC()
 	params := repository.UpdateStateParams{
 		ExternalID:     externalID,
@@ -264,10 +266,10 @@ func (s *Service) touchActivity(ctx context.Context, externalID string, expected
 	}
 	switch expectedState {
 	case lifecycle.StateRunning:
-		idleDeadline := now.Add(s.cfg.IdleStopTimeout)
+		idleDeadline := now.Add(settings.IdleStopTimeout)
 		params.IdleStopDeadlineAt = &idleDeadline
 	case lifecycle.StateStopped:
-		retentionDeadline := now.Add(s.cfg.StoppedRetentionTimeout)
+		retentionDeadline := now.Add(settings.StoppedRetentionTimeout)
 		params.RetentionPruneDeadlineAt = &retentionDeadline
 	}
 	_, updateErr := s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
@@ -446,4 +448,12 @@ func (w *maxBytesWriter) Write(p []byte) (int, error) {
 	n, err := w.writer.Write(p)
 	w.written += int64(n)
 	return n, err
+}
+
+// settings is the configuration row's container runs with: its image's limits and lifecycle times.
+func (s *Service) settings(row *repository.Container) config.Config {
+	if row == nil {
+		return s.cfg
+	}
+	return s.cfg.ForImage(row.ImageName)
 }

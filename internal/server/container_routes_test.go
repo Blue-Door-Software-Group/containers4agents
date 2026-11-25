@@ -31,7 +31,7 @@ func (a staticAuthorizer) IsAuthorized(_ string) bool {
 
 type fakeContainerService struct{}
 
-func (f fakeContainerService) CreateContainer(_ context.Context) (*lifecycle.ContainerView, error) {
+func (f fakeContainerService) CreateContainer(_ context.Context, _ lifecycle.CreateOptions) (*lifecycle.ContainerView, error) {
 	now := time.Now().UTC()
 	return &lifecycle.ContainerView{
 		ExternalID:   "test-container",
@@ -145,7 +145,7 @@ func TestContainerRouteAllowsAuthorized(t *testing.T) {
 
 type providerFailingService struct{}
 
-func (providerFailingService) CreateContainer(_ context.Context) (*lifecycle.ContainerView, error) {
+func (providerFailingService) CreateContainer(_ context.Context, _ lifecycle.CreateOptions) (*lifecycle.ContainerView, error) {
 	return nil, fmt.Errorf("%w: create failed", lifecycle.ErrProviderFailure)
 }
 func (providerFailingService) GetContainer(_ context.Context, _ string) (*lifecycle.ContainerView, error) {
@@ -200,7 +200,7 @@ type fakeExecutionService struct {
 	err    error
 }
 
-func (f fakeExecutionService) Execute(_ context.Context, externalID string, command []string) (*execution.Result, error) {
+func (f fakeExecutionService) Execute(_ context.Context, externalID string, command []string, _ map[string]string) (*execution.Result, error) {
 	if f.err != nil {
 		return nil, f.err
 	}

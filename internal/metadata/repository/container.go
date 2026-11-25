@@ -17,13 +17,18 @@ var ErrNotFound = errors.New("container metadata not found")
 var ErrStateConflict = errors.New("container metadata state conflict")
 var ErrExecutionInProgress = errors.New("container execution already in progress")
 
+// ErrExternalIDTaken: a live container already has the external id.
+var ErrExternalIDTaken = errors.New("container external id already in use")
+
 type Container struct {
-	ID                       string
-	ExternalID               string
-	State                    string
-	ExecInProgress           bool
-	Profile                  string
-	ImageVersion             string
+	ID             string
+	ExternalID     string
+	State          string
+	ExecInProgress bool
+	Profile        string
+	ImageVersion   string
+	// ImageName is the registered image ("" on rows from before images: the default image).
+	ImageName                string
 	ProviderRef              *string
 	CreatedAt                time.Time
 	UpdatedAt                time.Time
@@ -40,7 +45,14 @@ type CreateParams struct {
 	ExternalID   string
 	Profile      string
 	ImageVersion string
+	ImageName    string
+	// ReplaceTerminal lets a caller-chosen external id be reused: an existing row for it that is
+	// pruned or failed is deleted first (in the same transaction). A live row still conflicts.
+	ReplaceTerminal bool
 }
+
+// terminalStates are the states a row's external id may be reused from.
+var terminalStates = []string{"pruned", "failed"}
 
 type UpdateStateParams struct {
 	ExternalID                  string
@@ -104,15 +116,37 @@ func NewEntContainerRepository(client *ent.Client) *EntContainerRepository {
 }
 
 func (r *EntContainerRepository) Create(ctx context.Context, params CreateParams) (*Container, error) {
-	row, err := r.client.ContainerMetadata.
+	tx, err := r.client.Tx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin create container metadata: %w", err)
+	}
+	if params.ReplaceTerminal {
+		if _, err := tx.ContainerMetadata.Delete().
+			Where(containermetadata.ExternalIDEQ(params.ExternalID), containermetadata.StateIn(terminalStates...)).
+			Exec(ctx); err != nil {
+			_ = tx.Rollback()
+			return nil, fmt.Errorf("replace terminal container metadata: %w", err)
+		}
+	}
+	create := tx.ContainerMetadata.
 		Create().
 		SetExternalID(params.ExternalID).
 		SetProfile(params.Profile).
 		SetImageVersion(params.ImageVersion).
-		SetState("creating").
-		Save(ctx)
+		SetState("creating")
+	if params.ImageName != "" {
+		create.SetImageName(params.ImageName)
+	}
+	row, err := create.Save(ctx)
 	if err != nil {
+		_ = tx.Rollback()
+		if ent.IsConstraintError(err) {
+			return nil, fmt.Errorf("%w: %v", ErrExternalIDTaken, err)
+		}
 		return nil, fmt.Errorf("create container metadata: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit create container metadata: %w", err)
 	}
 	return mapRow(row), nil
 }
@@ -646,6 +680,7 @@ func mapRow(row *ent.ContainerMetadata) *Container {
 		ExecInProgress:           row.ExecInProgress,
 		Profile:                  row.Profile,
 		ImageVersion:             row.ImageVersion,
+		ImageName:                row.ImageName,
 		ProviderRef:              row.ProviderRef,
 		CreatedAt:                row.CreatedAt,
 		UpdatedAt:                row.UpdatedAt,

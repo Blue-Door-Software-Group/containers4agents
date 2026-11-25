@@ -9,12 +9,14 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/errdefs"
@@ -96,12 +98,17 @@ func (p *Provider) CreateSandbox(ctx context.Context, spec types.SandboxSpec) (t
 			"c4a.external_id":   spec.ExternalID,
 			"c4a.profile":       spec.Profile,
 			"c4a.image_version": spec.ImageVersion,
+			"c4a.network":       networkLabel(spec.Network),
 		},
 		Cmd: []string{"sh", "-lc", "mkdir -p /workspace && chmod 0777 /workspace && sleep infinity"},
 	}
 
+	networkMode, err := p.networkMode(ctx, spec.Network)
+	if err != nil {
+		return types.ProviderContainer{}, err
+	}
 	hostCfg := &container.HostConfig{
-		NetworkMode: container.NetworkMode("none"),
+		NetworkMode: networkMode,
 		Resources: container.Resources{
 			Memory:     spec.Runtime.MemoryMaxBytes,
 			MemorySwap: spec.Runtime.MemoryMaxBytes,
@@ -189,7 +196,7 @@ func (p *Provider) Exec(ctx context.Context, providerRef string, req types.ExecR
 	stdoutBuffer := newLimitedBuffer(req.MaxStdoutBytes)
 	stderrBuffer := newLimitedBuffer(req.MaxStderrBytes)
 
-	exitCode, err := p.runExec(ctx, providerRef, req.Command, req.User, nil, stdoutBuffer, stderrBuffer)
+	exitCode, err := p.runExec(ctx, providerRef, req.Command, req.User, execEnv(req.Env), nil, stdoutBuffer, stderrBuffer)
 	result := types.ExecResult{
 		Stdout:       stdoutBuffer.String(),
 		Stderr:       stderrBuffer.String(),
@@ -703,6 +710,7 @@ func (p *Provider) runExec(
 	providerRef string,
 	cmd []string,
 	user string,
+	env []string,
 	stdin io.Reader,
 	stdout io.Writer,
 	stderr io.Writer,
@@ -710,6 +718,7 @@ func (p *Provider) runExec(
 	create, err := p.cli.ContainerExecCreate(ctx, providerRef, container.ExecOptions{
 		Cmd:          cmd,
 		User:         user,
+		Env:          env,
 		WorkingDir:   "/workspace",
 		AttachStdin:  stdin != nil,
 		AttachStdout: true,
@@ -772,7 +781,7 @@ func (p *Provider) runFileScript(
 	operation string,
 	filePath string,
 ) error {
-	exitCode, err := p.runExec(ctx, providerRef, cmd, "", stdin, stdout, stderrBuffer)
+	exitCode, err := p.runExec(ctx, providerRef, cmd, "", nil, stdin, stdout, stderrBuffer)
 	if err != nil {
 		if p.devMode {
 			slog.WarnContext(
@@ -806,4 +815,67 @@ func (p *Provider) runFileScript(
 		return p.mapFileExitCode(exitCode, stderrBuffer.String(), operation, filePath)
 	}
 	return nil
+}
+
+// EgressNetworkName is the bridge network egress sandboxes join: outbound access only. Docker
+// cannot deny destinations on its own; scripts/egress-firewall.sh installs DOCKER-USER rules for
+// this network (metadata IPs, RFC1918, link-local, control planes).
+const EgressNetworkName = "c4a-egress"
+
+func networkLabel(mode string) string {
+	if mode == types.NetworkEgress {
+		return types.NetworkEgress
+	}
+	return types.NetworkNone
+}
+
+// networkMode is the Docker network for a sandbox's network mode, creating the egress network on
+// first use. Anything but egress is no network at all.
+func (p *Provider) networkMode(ctx context.Context, mode string) (container.NetworkMode, error) {
+	switch mode {
+	case "", types.NetworkNone:
+		return container.NetworkMode("none"), nil
+	case types.NetworkEgress:
+		if err := p.ensureEgressNetwork(ctx); err != nil {
+			return "", err
+		}
+		return container.NetworkMode(EgressNetworkName), nil
+	default:
+		return "", fmt.Errorf("%w: unknown network mode %q", types.ErrProviderDenied, mode)
+	}
+}
+
+// ensureEgressNetwork creates the egress bridge network when it is missing: no traffic between
+// containers on it (enable_icc=false), and nothing published inbound.
+func (p *Provider) ensureEgressNetwork(ctx context.Context) error {
+	if _, err := p.cli.NetworkInspect(ctx, EgressNetworkName, network.InspectOptions{}); err == nil {
+		return nil
+	} else if !errdefs.IsNotFound(err) {
+		return fmt.Errorf("%w: inspect egress network: %v", types.ErrProviderUnavailable, err)
+	}
+	_, err := p.cli.NetworkCreate(ctx, EgressNetworkName, network.CreateOptions{
+		Driver: "bridge",
+		Options: map[string]string{
+			"com.docker.network.bridge.enable_icc":           "false",
+			"com.docker.network.bridge.enable_ip_masquerade": "true",
+		},
+		Labels: map[string]string{"c4a.network": types.NetworkEgress},
+	})
+	if err != nil && !errdefs.IsConflict(err) {
+		return fmt.Errorf("%w: create egress network: %v", types.ErrProviderUnavailable, err)
+	}
+	return nil
+}
+
+// execEnv is an exec's extra environment as Docker takes it, sorted for a stable order.
+func execEnv(env map[string]string) []string {
+	if len(env) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(env))
+	for k, v := range env {
+		out = append(out, k+"="+v)
+	}
+	sort.Strings(out)
+	return out
 }

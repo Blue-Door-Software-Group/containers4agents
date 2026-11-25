@@ -59,6 +59,51 @@ type Config struct {
 	ReadTimeout                  time.Duration
 	WriteTimeout                 time.Duration
 	IdleTimeout                  time.Duration
+
+	// DefaultImageName is the image a create without one gets.
+	DefaultImageName string
+	// Images are the registered images, each resolved into the settings its containers run with
+	// (its own DockerImage, profile limits and lifecycle times). Empty: one implicit image, these
+	// settings themselves.
+	Images map[string]Image
+}
+
+// Image is a registered container image resolved into the settings its containers run with.
+type Image struct {
+	Name string
+	// Network is policy.NetworkNone or policy.NetworkEgress.
+	Network string
+	// Settings is the server's Config with this image's ref, profile, limits and lifecycle times
+	// applied (its own Images left empty).
+	Settings Config
+}
+
+// Image resolves an image name ("" means the default image). ok is false for an unknown name.
+func (c Config) Image(name string) (Image, bool) {
+	if name == "" {
+		name = c.DefaultImageName
+	}
+	if len(c.Images) == 0 {
+		// Before any registry: the one implicit image is these settings, with no network.
+		if name == "" || name == policy.ImplicitImageName {
+			return Image{Name: policy.ImplicitImageName, Network: policy.NetworkNone, Settings: c}, true
+		}
+		return Image{}, false
+	}
+	img, ok := c.Images[name]
+	return img, ok
+}
+
+// ForImage is the settings a container on the named image runs with; an unknown or empty name
+// (a row from before images) gets the default image's.
+func (c Config) ForImage(name string) Config {
+	if img, ok := c.Image(name); ok {
+		return img.Settings
+	}
+	if img, ok := c.Image(""); ok {
+		return img.Settings
+	}
+	return c
 }
 
 func Load() (Config, error) {

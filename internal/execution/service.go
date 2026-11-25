@@ -65,7 +65,9 @@ func NewService(repo repository.ContainerRepository, provider types.ContainerPro
 	}
 }
 
-func (s *Service) Execute(ctx context.Context, externalID string, command []string) (*Result, error) {
+// Execute runs command in the container. env (optional) is set for this command only: it goes to
+// the exec call, never into the container's config, and is never logged.
+func (s *Service) Execute(ctx context.Context, externalID string, command []string, env map[string]string) (*Result, error) {
 	execStarted := time.Now()
 	outcome := StatusInternalError
 	defer func() {
@@ -97,6 +99,8 @@ func (s *Service) Execute(ctx context.Context, externalID string, command []stri
 		outcome = "state_conflict"
 		return nil, fmt.Errorf("%w: missing provider reference", ErrStateConflict)
 	}
+	// The container's own image settings: exec limits and the idle time differ per image.
+	settings := s.cfg.ForImage(row.ImageName)
 
 	activeExecCount, err := s.repo.CountExecutionInProgress(ctx)
 	if err != nil {
@@ -132,15 +136,16 @@ func (s *Service) Execute(ctx context.Context, externalID string, command []stri
 	}()
 
 	providerStarted := time.Now()
-	execCtx, cancel := context.WithTimeout(ctx, s.cfg.ExecTimeout)
+	execCtx, cancel := context.WithTimeout(ctx, settings.ExecTimeout)
 	defer cancel()
 
 	providerResult, err := s.provider.Exec(execCtx, *row.ProviderRef, types.ExecRequest{
 		Command:        command,
-		Timeout:        s.cfg.ExecTimeout,
-		MaxStdoutBytes: s.cfg.ExecMaxStdoutBytes,
-		MaxStderrBytes: s.cfg.ExecMaxStderrBytes,
-		User:           s.cfg.ContainerExecUser,
+		Timeout:        settings.ExecTimeout,
+		MaxStdoutBytes: settings.ExecMaxStdoutBytes,
+		MaxStderrBytes: settings.ExecMaxStderrBytes,
+		User:           settings.ContainerExecUser,
+		Env:            env,
 	})
 	if err != nil {
 		outcome = "provider_failure"
@@ -157,14 +162,14 @@ func (s *Service) Execute(ctx context.Context, externalID string, command []stri
 		TruncatedOut:   providerResult.TruncatedOut,
 		TruncatedErr:   providerResult.TruncatedErr,
 		Duration:       time.Since(providerStarted),
-		AppliedTimeout: s.cfg.ExecTimeout,
+		AppliedTimeout: settings.ExecTimeout,
 	}
 
 	_, updateErr := s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
 		ExternalID:         row.ExternalID,
 		State:              lifecycle.StateRunning,
 		SetActivityNow:     true,
-		IdleStopDeadlineAt: timePtr(time.Now().UTC().Add(s.cfg.IdleStopTimeout)),
+		IdleStopDeadlineAt: timePtr(time.Now().UTC().Add(settings.IdleStopTimeout)),
 	}, lifecycle.StateRunning)
 	if updateErr != nil && !errors.Is(updateErr, repository.ErrStateConflict) && !errors.Is(updateErr, repository.ErrNotFound) {
 		obslog.WithRequestID(ctx, slog.Default()).WarnContext(ctx, "failed to persist execution activity timestamp", "component", "execution", "operation", "exec", "error_category", obslog.ErrorCategory(updateErr))

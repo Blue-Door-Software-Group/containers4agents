@@ -105,7 +105,7 @@ type noOpContainerService struct {
 	createCalls int
 }
 
-func (s *noOpContainerService) CreateContainer(context.Context) (*lifecycle.ContainerView, error) {
+func (s *noOpContainerService) CreateContainer(context.Context, lifecycle.CreateOptions) (*lifecycle.ContainerView, error) {
 	s.createCalls++
 	now := time.Now().UTC()
 	return &lifecycle.ContainerView{
@@ -136,7 +136,7 @@ type replayAwareContainerService struct {
 	getByID     map[string]error
 }
 
-func (s *replayAwareContainerService) CreateContainer(context.Context) (*lifecycle.ContainerView, error) {
+func (s *replayAwareContainerService) CreateContainer(context.Context, lifecycle.CreateOptions) (*lifecycle.ContainerView, error) {
 	s.createCalls++
 	now := time.Now().UTC()
 	return &lifecycle.ContainerView{
@@ -468,14 +468,14 @@ type failOnceContainerService struct {
 	failErr error
 }
 
-func (s *failOnceContainerService) CreateContainer(ctx context.Context) (*lifecycle.ContainerView, error) {
+func (s *failOnceContainerService) CreateContainer(ctx context.Context, opts lifecycle.CreateOptions) (*lifecycle.ContainerView, error) {
 	if s.failErr != nil {
 		s.createCalls++
 		err := s.failErr
 		s.failErr = nil
 		return nil, err
 	}
-	return s.noOpContainerService.CreateContainer(ctx)
+	return s.noOpContainerService.CreateContainer(ctx, opts)
 }
 
 func TestContainerCreateFailureReleasesIdempotencyKeyForRetry(t *testing.T) {

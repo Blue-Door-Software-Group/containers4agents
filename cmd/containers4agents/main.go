@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
+	"sort"
+	"strings"
 	"syscall"
 	"time"
 
@@ -60,7 +63,10 @@ func run() error {
 		"active_exec_limit", cfg.ActiveExecLimit,
 		"running_container_limit", cfg.RunningContainerLimit,
 		"total_container_limit", cfg.TotalContainerLimit,
+		"default_image", cfg.DefaultImageName,
+		"images", len(cfg.Images),
 	)
+	warnUnguardedEgress(logger, cfg, egressRulesInstalled)
 
 	repoClient, err := entrepo.New(cfg)
 	if err != nil {
@@ -113,9 +119,9 @@ func run() error {
 	lifecycleSvc := lifecycle.NewService(containerRepo, dockerProvider, cfg, metricsRegistry)
 	executionSvc := execution.NewService(containerRepo, dockerProvider, cfg, metricsRegistry)
 	fileSvc := filesvc.NewService(containerRepo, dockerProvider, cfg, metricsRegistry)
-	containerHandler := handlers.NewContainerHandler(lifecycleSvc, idempotencySvc)
+	containerHandler := handlers.NewContainerHandler(lifecycleSvc, idempotencySvc).WithImages(imageInfos(cfg))
 	executionHandler := handlers.NewExecutionHandler(executionSvc)
-	fileHandler := handlers.NewFileHandler(fileSvc, cfg.FileMaxUploadBytes, idempotencySvc)
+	fileHandler := handlers.NewFileHandler(fileSvc, maxUploadBytes(cfg), idempotencySvc)
 	authMw := middleware.Auth(keyManager, metricsRegistry)
 	handler := server.NewHandler(metricsRegistry, authMw, containerHandler, executionHandler, fileHandler)
 	apiServer := server.New(cfg, logger, handler)
@@ -231,6 +237,12 @@ func applyResourcePolicy(cfg *config.Config, resourcePolicy policy.ResourcePolic
 	cfg.ActiveExecLimit = resourcePolicy.Capacity.ActiveExecLimit
 	cfg.RunningContainerLimit = resourcePolicy.Capacity.RunningContainerLimit
 	cfg.TotalContainerLimit = resourcePolicy.Capacity.TotalContainerLimit
+	applyProfile(cfg, profile)
+	return applyImages(cfg, resourcePolicy)
+}
+
+// applyProfile flattens a runtime profile into cfg.
+func applyProfile(cfg *config.Config, profile policy.RuntimeProfile) {
 	cfg.ContainerCPUMaxCores = profile.CPU.MaxCores
 	cfg.ContainerMemoryMaxBytes = profile.Memory.MaxBytes
 	cfg.WorkspaceDiskQuotaBytes = profile.Disk.WorkspaceMaxBytes
@@ -249,5 +261,126 @@ func applyResourcePolicy(cfg *config.Config, resourcePolicy policy.ResourcePolic
 	cfg.ExecMaxStderrBytes = profile.Exec.StderrMaxBytes
 	cfg.FileMaxUploadBytes = profile.Files.MaxUploadBytes
 	cfg.FileMaxDownloadBytes = profile.Files.MaxDownloadBytes
+}
+
+// applyImages resolves the image registry into cfg.Images. The implicit image (C4A_DOCKER_IMAGE
+// under the active profile, no network) is always there unless the registry redefines it, so a
+// policy without images behaves exactly as before.
+func applyImages(cfg *config.Config, resourcePolicy policy.ResourcePolicy) error {
+	base := *cfg
+	base.Images = nil
+	images := map[string]config.Image{
+		policy.ImplicitImageName: {Name: policy.ImplicitImageName, Network: policy.NetworkNone, Settings: base},
+	}
+	for name, spec := range resourcePolicy.Images {
+		settings := base
+		profileName := spec.Profile
+		if profileName == "" {
+			profileName = base.DefaultProfile
+		}
+		profile, ok := resourcePolicy.Profiles[profileName]
+		if !ok {
+			return fmt.Errorf("image %q: profile %q not found in resource policy", name, profileName)
+		}
+		settings.DefaultProfile = profileName
+		applyProfile(&settings, profile)
+		settings.DockerImage = os.ExpandEnv(spec.Ref)
+		if settings.DockerImage == "" {
+			return fmt.Errorf("image %q: ref is empty", name)
+		}
+		if spec.IdleStopTimeout != "" {
+			d, err := time.ParseDuration(spec.IdleStopTimeout)
+			if err != nil {
+				return fmt.Errorf("image %q: idle_stop_timeout: %w", name, err)
+			}
+			settings.IdleStopTimeout = d
+		}
+		if spec.StoppedRetentionTimeout != "" {
+			d, err := time.ParseDuration(spec.StoppedRetentionTimeout)
+			if err != nil {
+				return fmt.Errorf("image %q: stopped_retention_timeout: %w", name, err)
+			}
+			settings.StoppedRetentionTimeout = d
+		}
+		network := spec.Network
+		if network == "" {
+			network = policy.NetworkNone
+		}
+		images[name] = config.Image{Name: name, Network: network, Settings: settings}
+	}
+	cfg.Images = images
+	cfg.DefaultImageName = resourcePolicy.DefaultImage
+	if cfg.DefaultImageName == "" {
+		cfg.DefaultImageName = policy.ImplicitImageName
+	}
+	if _, ok := images[cfg.DefaultImageName]; !ok {
+		return fmt.Errorf("default_image %q is not a registered image", cfg.DefaultImageName)
+	}
 	return nil
+}
+
+// imageInfos lists the registered images for GET /v1/images, sorted by name.
+func imageInfos(cfg config.Config) []handlers.ImageInfo {
+	names := make([]string, 0, len(cfg.Images))
+	for name := range cfg.Images {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]handlers.ImageInfo, 0, len(names))
+	for _, name := range names {
+		img := cfg.Images[name]
+		out = append(out, handlers.ImageInfo{
+			Name:                    name,
+			Default:                 name == cfg.DefaultImageName,
+			Profile:                 img.Settings.DefaultProfile,
+			Network:                 img.Network,
+			IdleStopTimeout:         img.Settings.IdleStopTimeout.String(),
+			StoppedRetentionTimeout: img.Settings.StoppedRetentionTimeout.String(),
+		})
+	}
+	return out
+}
+
+// maxUploadBytes is the largest upload any image allows: the HTTP body cap. Each container's own
+// image limit is enforced by the files service.
+func maxUploadBytes(cfg config.Config) int {
+	limit := cfg.FileMaxUploadBytes
+	for _, img := range cfg.Images {
+		limit = max(limit, img.Settings.FileMaxUploadBytes)
+	}
+	return limit
+}
+
+// egressRulesInstalled reports whether scripts/egress-firewall.sh's DOCKER-USER rules are in place
+// (ok false: they could not be checked, e.g. no iptables or not root).
+func egressRulesInstalled() (installed, ok bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "iptables", "-S", "DOCKER-USER").Output()
+	if err != nil {
+		return false, false
+	}
+	return strings.Contains(string(out), "c4a-egress"), true
+}
+
+// warnUnguardedEgress warns when an image has egress but the deny rules for it are not installed:
+// its sandboxes could reach the metadata service, private networks and the control planes.
+func warnUnguardedEgress(logger *slog.Logger, cfg config.Config, check func() (bool, bool)) {
+	var egress []string
+	for name, img := range cfg.Images {
+		if img.Network == policy.NetworkEgress {
+			egress = append(egress, name)
+		}
+	}
+	if len(egress) == 0 {
+		return
+	}
+	sort.Strings(egress)
+	installed, ok := check()
+	switch {
+	case !ok:
+		logger.Warn("egress images registered; could not verify the egress deny rules (run scripts/egress-firewall.sh as root on the Docker host)", "images", egress)
+	case !installed:
+		logger.Warn("egress images registered without the egress deny rules: their sandboxes can reach metadata, private networks and control planes; run scripts/egress-firewall.sh", "images", egress)
+	}
 }

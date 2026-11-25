@@ -130,6 +130,11 @@ func ExecInProgress(v bool) predicate.ContainerMetadata {
 	return predicate.ContainerMetadata(sql.FieldEQ(FieldExecInProgress, v))
 }
 
+// ImageName applies equality check predicate on the "image_name" field. It's identical to ImageNameEQ.
+func ImageName(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEQ(FieldImageName, v))
+}
+
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
 func CreatedAtEQ(v time.Time) predicate.ContainerMetadata {
 	return predicate.ContainerMetadata(sql.FieldEQ(FieldCreatedAt, v))
@@ -918,6 +923,81 @@ func ExecInProgressEQ(v bool) predicate.ContainerMetadata {
 // ExecInProgressNEQ applies the NEQ predicate on the "exec_in_progress" field.
 func ExecInProgressNEQ(v bool) predicate.ContainerMetadata {
 	return predicate.ContainerMetadata(sql.FieldNEQ(FieldExecInProgress, v))
+}
+
+// ImageNameEQ applies the EQ predicate on the "image_name" field.
+func ImageNameEQ(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEQ(FieldImageName, v))
+}
+
+// ImageNameNEQ applies the NEQ predicate on the "image_name" field.
+func ImageNameNEQ(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNEQ(FieldImageName, v))
+}
+
+// ImageNameIn applies the In predicate on the "image_name" field.
+func ImageNameIn(vs ...string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldIn(FieldImageName, vs...))
+}
+
+// ImageNameNotIn applies the NotIn predicate on the "image_name" field.
+func ImageNameNotIn(vs ...string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNotIn(FieldImageName, vs...))
+}
+
+// ImageNameGT applies the GT predicate on the "image_name" field.
+func ImageNameGT(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldGT(FieldImageName, v))
+}
+
+// ImageNameGTE applies the GTE predicate on the "image_name" field.
+func ImageNameGTE(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldGTE(FieldImageName, v))
+}
+
+// ImageNameLT applies the LT predicate on the "image_name" field.
+func ImageNameLT(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldLT(FieldImageName, v))
+}
+
+// ImageNameLTE applies the LTE predicate on the "image_name" field.
+func ImageNameLTE(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldLTE(FieldImageName, v))
+}
+
+// ImageNameContains applies the Contains predicate on the "image_name" field.
+func ImageNameContains(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldContains(FieldImageName, v))
+}
+
+// ImageNameHasPrefix applies the HasPrefix predicate on the "image_name" field.
+func ImageNameHasPrefix(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldHasPrefix(FieldImageName, v))
+}
+
+// ImageNameHasSuffix applies the HasSuffix predicate on the "image_name" field.
+func ImageNameHasSuffix(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldHasSuffix(FieldImageName, v))
+}
+
+// ImageNameIsNil applies the IsNil predicate on the "image_name" field.
+func ImageNameIsNil() predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldIsNull(FieldImageName))
+}
+
+// ImageNameNotNil applies the NotNil predicate on the "image_name" field.
+func ImageNameNotNil() predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNotNull(FieldImageName))
+}
+
+// ImageNameEqualFold applies the EqualFold predicate on the "image_name" field.
+func ImageNameEqualFold(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEqualFold(FieldImageName, v))
+}
+
+// ImageNameContainsFold applies the ContainsFold predicate on the "image_name" field.
+func ImageNameContainsFold(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldContainsFold(FieldImageName, v))
 }
 
 // And groups predicates with the AND operator between them.

@@ -54,6 +54,12 @@ func (ContainerMetadata) Fields() []ent.Field {
 			Nillable(),
 		field.Bool("exec_in_progress").
 			Default(false),
+		// The registered image the container runs (policy images); empty on rows from before
+		// images, which read as the default image. Last, so the generated runtime's field indexes
+		// stay as they were.
+		field.String("image_name").
+			Optional().
+			Immutable(),
 	}
 }
 

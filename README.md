@@ -40,6 +40,16 @@ Core routes:
 - `PUT /v1/containers/{id}/files/{path...}`
 - `GET /v1/containers/{id}/files/{path...}`
 - `DELETE /v1/containers/{id}/files/{path...}`
+- `GET /v1/images`
+
+Optional additions (all additive; a caller that sends none of them gets today's behaviour):
+
+- `POST /v1/containers` takes an optional JSON body `{"image", "external_id", "if_exists"}`:
+  - `image` names a registered image (`GET /v1/images`); omitted, the default image. An unknown name is `400 unknown_image`.
+  - `external_id` is the caller's id for the container (`^[A-Za-z0-9._:-]{1,128}$`); omitted, a UUID. A live container with that id is `409 container_exists` (the existing container in the body), or `200` with it when `if_exists` is `"return"`. A pruned or failed container's id may be reused.
+  - The idempotency hash covers the body when there is one; without a body it is unchanged.
+  - The response adds `image` and `network` (`none` or `egress`).
+- `POST /v1/containers/{id}/exec` takes an optional `env` object for that command only (names `^[A-Z_][A-Z0-9_]{0,63}$`, at most 64 entries and 64 KiB). It is never stored in the container or logged.
 
 Unauthenticated operational routes:
 
@@ -212,7 +222,7 @@ Tagging and publish workflow details:
 ## Security and Logging Notes
 
 - API is key-authenticated; use TLS at the edge.
-- Agent sandboxes are network-isolated by default profile.
+- Agent sandboxes have no network by default. An operator may register an image with `network: egress` (outbound only, on the dedicated `c4a-egress` bridge network); install the deny rules for it with `scripts/egress-firewall.sh` (metadata IPs, private ranges, control planes). Callers choose an image, never a network.
 - Commands execute as unprivileged user under sandbox restrictions.
 - Production logs are metadata-focused and avoid command/file content.
 - `DEV_MODE=true` enables additional diagnostics and should not be used in production.
