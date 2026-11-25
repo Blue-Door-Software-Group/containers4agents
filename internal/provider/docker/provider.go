@@ -3,7 +3,9 @@ package docker
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,8 +18,10 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/registry"
+	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -100,14 +104,25 @@ func (p *Provider) CreateSandbox(ctx context.Context, spec types.SandboxSpec) (t
 			"c4a.image_version": spec.ImageVersion,
 			"c4a.network":       networkLabel(spec.Network),
 		},
-		Cmd: []string{"sh", "-lc", "mkdir -p /workspace && chmod 0777 /workspace && sleep infinity"},
+		// The chmod may fail on a mounted volume the image's user does not own (the volume copies the
+		// image's /workspace ownership when it has one): the sandbox still starts.
+		Cmd: []string{"sh", "-lc", "mkdir -p /workspace; chmod 0777 /workspace 2>/dev/null; exec sleep infinity"},
 	}
 
 	networkMode, err := p.networkMode(ctx, spec.Network)
 	if err != nil {
 		return types.ProviderContainer{}, err
 	}
+	var mounts []mount.Mount
+	if spec.Persistent {
+		name, err := p.ensureWorkspaceVolume(ctx, spec.ExternalID)
+		if err != nil {
+			return types.ProviderContainer{}, err
+		}
+		mounts = append(mounts, mount.Mount{Type: mount.TypeVolume, Source: name, Target: "/workspace"})
+	}
 	hostCfg := &container.HostConfig{
+		Mounts:      mounts,
 		NetworkMode: networkMode,
 		Resources: container.Resources{
 			Memory:     spec.Runtime.MemoryMaxBytes,
@@ -883,4 +898,40 @@ func execEnv(env map[string]string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// WorkspaceVolumeName is a persistent sandbox's workspace volume: a hash of its external id, since
+// external ids may hold characters volume names cannot (":"), and a mapping could collide.
+func WorkspaceVolumeName(externalID string) string {
+	sum := sha256.Sum256([]byte(externalID))
+	return "c4a-ws-" + hex.EncodeToString(sum[:])[:32]
+}
+
+// ensureWorkspaceVolume creates the sandbox's workspace volume when it is missing (labelled with
+// its external id) and returns its name; an existing one is reused, which is the point.
+func (p *Provider) ensureWorkspaceVolume(ctx context.Context, externalID string) (string, error) {
+	name := WorkspaceVolumeName(externalID)
+	if _, err := p.cli.VolumeInspect(ctx, name); err == nil {
+		return name, nil
+	} else if !errdefs.IsNotFound(err) {
+		return "", fmt.Errorf("%w: inspect workspace volume: %v", types.ErrProviderUnavailable, err)
+	}
+	_, err := p.cli.VolumeCreate(ctx, volume.CreateOptions{
+		Name:   name,
+		Labels: map[string]string{"c4a.external_id": externalID, "c4a.volume": "workspace"},
+	})
+	if err != nil && !errdefs.IsConflict(err) {
+		return "", fmt.Errorf("%w: create workspace volume: %v", types.ErrProviderUnavailable, err)
+	}
+	return name, nil
+}
+
+// RemoveWorkspaceVolume removes a persistent sandbox's workspace volume (a prune with purge); a
+// volume already gone is fine.
+func (p *Provider) RemoveWorkspaceVolume(ctx context.Context, externalID string) error {
+	err := p.cli.VolumeRemove(ctx, WorkspaceVolumeName(externalID), true)
+	if err != nil && !errdefs.IsNotFound(err) {
+		return mapDockerErr(err)
+	}
+	return nil
 }

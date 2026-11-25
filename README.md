@@ -47,8 +47,10 @@ Optional additions (all additive; a caller that sends none of them gets today's 
 - `POST /v1/containers` takes an optional JSON body `{"image", "external_id", "if_exists"}`:
   - `image` names a registered image (`GET /v1/images`); omitted, the default image. An unknown name is `400 unknown_image`.
   - `external_id` is the caller's id for the container (`^[A-Za-z0-9._:-]{1,128}$`); omitted, a UUID. A live container with that id is `409 container_exists` (the existing container in the body), or `200` with it when `if_exists` is `"return"`. A pruned or failed container's id may be reused.
+  - `lifecycle: "stop_only"`: the container is stopped when idle and never pruned by the reconciler (no retention deadline, never evicted for capacity). `storage: "persistent"`: `/workspace` is a named volume that outlives the container; creating it again under the same `external_id` mounts the same volume. Both need an image that allows them (`allow_stop_only`, `allow_persistent`), else `400 policy_not_allowed`.
   - The idempotency hash covers the body when there is one; without a body it is unchanged.
   - The response adds `image` and `network` (`none` or `egress`).
+- `POST /v1/containers/{id}/prune?purge=true` also removes a persistent container's workspace volume (a plain prune keeps it).
 - `POST /v1/containers/{id}/exec` takes an optional `env` object for that command only (names `^[A-Z_][A-Z0-9_]{0,63}$`, at most 64 entries and 64 KiB). It is never stored in the container or logged.
 
 Unauthenticated operational routes:

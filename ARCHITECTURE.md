@@ -247,6 +247,7 @@ stateDiagram-v2
 ### Images and per-image settings
 
 - `resource-policy.yaml` may register images (`images:` with `ref`, `profile`, `network`, and optional idle-stop and retention times) and name a `default_image`. Without a registry there is one implicit image, `runtime`: `C4A_DOCKER_IMAGE` under the active profile, which is the behaviour before images existed.
+- Lifecycle and storage policies (per create, if the image allows them): `stop_only` containers get no retention deadline and are skipped by capacity eviction, so the reconciler never prunes them; `persistent` containers mount `/workspace` from a named volume (`c4a-ws-<hash of external_id>`) that a plain prune keeps and `?purge=true` removes.
 - Each registered image resolves at startup into the settings its containers run with (`config.Image`). The lifecycle, execution and files services read a container's own image settings (`Config.ForImage(row.image_name)`) for limits and deadlines; rows from before images read as the default image.
 - Provider performs management operations externally.
 

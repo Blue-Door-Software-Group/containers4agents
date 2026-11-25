@@ -30,7 +30,7 @@ func memRepo(rows map[string]*repository.Container, created *repository.CreatePa
 				return nil, repository.ErrExternalIDTaken
 			}
 			*created = p
-			row := &repository.Container{ExternalID: p.ExternalID, State: StateCreating, Profile: p.Profile, ImageVersion: p.ImageVersion, ImageName: p.ImageName}
+			row := &repository.Container{ExternalID: p.ExternalID, State: StateCreating, Profile: p.Profile, ImageVersion: p.ImageVersion, ImageName: p.ImageName, LifecyclePolicy: p.LifecyclePolicy, StoragePolicy: p.StoragePolicy}
 			rows[p.ExternalID] = row
 			return row, nil
 		},
@@ -164,5 +164,109 @@ func TestCreateContainer_ReusingAFailedIDRemovesItsSandbox(t *testing.T) {
 	}
 	if len(pruned) != 1 || pruned[0] != "docker-old" {
 		t.Fatalf("pruned %v", pruned)
+	}
+}
+
+// policyConfig is imagesConfig with swarm-dev allowing stop-only and persistent storage.
+func policyConfig() config.Config {
+	cfg := imagesConfig()
+	dev := cfg.Images["swarm-dev"]
+	dev.AllowStopOnly, dev.AllowPersistent = true, true
+	cfg.Images["swarm-dev"] = dev
+	return cfg
+}
+
+func TestCreateContainer_PoliciesNeedTheImagesConsent(t *testing.T) {
+	rows := map[string]*repository.Container{}
+	var created repository.CreateParams
+	var spec types.SandboxSpec
+	svc := NewService(memRepo(rows, &created), specProvider{spec: &spec}, policyConfig())
+
+	for _, opts := range []CreateOptions{
+		{Lifecycle: LifecycleStopOnly},             // the default image does not allow it
+		{Storage: StoragePersistent},               // nor this
+		{Image: "swarm-dev", Lifecycle: "forever"}, // not a policy
+		{Image: "swarm-dev", Storage: "nfs"},       // not a policy
+	} {
+		if _, err := svc.CreateContainer(context.Background(), opts); !errors.Is(err, ErrPolicyNotAllowed) {
+			t.Fatalf("%+v: want ErrPolicyNotAllowed, got %v", opts, err)
+		}
+	}
+	view, err := svc.CreateContainer(context.Background(), CreateOptions{Image: "swarm-dev", ExternalID: "swarm-u-p", Lifecycle: LifecycleStopOnly, Storage: StoragePersistent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !spec.Persistent || created.LifecyclePolicy != LifecycleStopOnly || created.StoragePolicy != StoragePersistent {
+		t.Fatalf("spec %+v params %+v", spec, created)
+	}
+	if view.Lifecycle != LifecycleStopOnly || view.Storage != StoragePersistent {
+		t.Fatalf("view %+v", view)
+	}
+	// The defaults stay the defaults.
+	if _, err := svc.CreateContainer(context.Background(), CreateOptions{}); err != nil || spec.Persistent || created.LifecyclePolicy != "" {
+		t.Fatalf("default create: %v %+v %+v", err, spec, created)
+	}
+}
+
+// purgeProvider records volume removals.
+type purgeProvider struct {
+	fakeProvider
+	purged *[]string
+}
+
+func (p purgeProvider) RemoveWorkspaceVolume(_ context.Context, id string) error {
+	*p.purged = append(*p.purged, id)
+	return nil
+}
+
+func TestStopAndPrune_StopOnlyAndPurge(t *testing.T) {
+	ref := "docker-1"
+	rows := map[string]*repository.Container{
+		"keep": {ExternalID: "keep", State: StateRunning, ProviderRef: &ref, LifecyclePolicy: LifecycleStopOnly, StoragePolicy: StoragePersistent},
+		"tmp":  {ExternalID: "tmp", State: StateRunning, ProviderRef: &ref},
+	}
+	var created repository.CreateParams
+	var purged []string
+	repo := memRepo(rows, &created)
+	var lastStop repository.UpdateStateParams
+	repo.updateIfCurrent = func(_ context.Context, p repository.UpdateStateParams, _ string) (*repository.Container, error) {
+		r := rows[p.ExternalID]
+		r.State = p.State
+		if p.State == StateStopped {
+			lastStop = p
+		}
+		return r, nil
+	}
+	svc := NewService(repo, purgeProvider{purged: &purged}, policyConfig())
+
+	if _, err := svc.StopContainer(context.Background(), "keep"); err != nil {
+		t.Fatal(err)
+	}
+	if lastStop.RetentionPruneDeadlineAt != nil || !lastStop.ClearRetentionPruneDeadline {
+		t.Fatalf("a stop-only container gets no retention deadline: %+v", lastStop)
+	}
+	if _, err := svc.StopContainer(context.Background(), "tmp"); err != nil {
+		t.Fatal(err)
+	}
+	if lastStop.RetentionPruneDeadlineAt == nil {
+		t.Fatal("a default container keeps its retention deadline")
+	}
+
+	rows["keep"].State, rows["tmp"].State = StateStopped, StateStopped
+	if _, err := svc.PruneContainer(context.Background(), "keep"); err != nil {
+		t.Fatal(err)
+	}
+	if len(purged) != 0 {
+		t.Fatal("a plain prune keeps the volume")
+	}
+	rows["keep"].State = StateStopped
+	if _, err := svc.PruneContainerWith(context.Background(), "keep", PruneOptions{Purge: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.PruneContainerWith(context.Background(), "tmp", PruneOptions{Purge: true}); err != nil {
+		t.Fatal(err)
+	}
+	if len(purged) != 1 || purged[0] != "keep" {
+		t.Fatalf("purge removes only a persistent container's volume: %v", purged)
 	}
 }

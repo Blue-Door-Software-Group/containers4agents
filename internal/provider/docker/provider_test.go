@@ -260,3 +260,13 @@ func TestNetworkModeWithoutEgress(t *testing.T) {
 		t.Fatal("no env is nil")
 	}
 }
+
+func TestWorkspaceVolumeName(t *testing.T) {
+	a, b := WorkspaceVolumeName("swarm:u:p"), WorkspaceVolumeName("swarm_u_p")
+	if a == b || !strings.HasPrefix(a, "c4a-ws-") || len(a) != len("c4a-ws-")+32 || strings.ContainsAny(a, ":/") {
+		t.Fatalf("%q %q", a, b)
+	}
+	if WorkspaceVolumeName("swarm:u:p") != a {
+		t.Fatal("deterministic")
+	}
+}

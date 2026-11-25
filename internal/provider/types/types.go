@@ -14,7 +14,15 @@ type SandboxSpec struct {
 	// Network is "none" (the default, also when empty) or "egress": outbound access only, on the
 	// provider's dedicated egress network. The operator's image registry decides it, never a caller.
 	Network string
-	Runtime RuntimeOptions
+	// Persistent mounts /workspace from a named volume keyed by ExternalID, kept when the sandbox
+	// is removed (VolumePurger removes it), so a sandbox created again under the id finds it.
+	Persistent bool
+	Runtime    RuntimeOptions
+}
+
+// VolumePurger removes a persistent sandbox's workspace volume (a prune with purge).
+type VolumePurger interface {
+	RemoveWorkspaceVolume(ctx context.Context, externalID string) error
 }
 
 // Network modes of a sandbox.

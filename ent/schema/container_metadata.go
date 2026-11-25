@@ -60,6 +60,16 @@ func (ContainerMetadata) Fields() []ent.Field {
 		field.String("image_name").
 			Optional().
 			Immutable(),
+		// "stop_only": stopped when idle, never pruned by the reconciler (no retention deadline,
+		// never evicted for capacity); empty is the default lifecycle.
+		field.String("lifecycle_policy").
+			Optional().
+			Immutable(),
+		// "persistent": /workspace is a named volume that outlives the container (removed only by
+		// a prune with purge); empty is the container's own layer.
+		field.String("storage_policy").
+			Optional().
+			Immutable(),
 	}
 }
 

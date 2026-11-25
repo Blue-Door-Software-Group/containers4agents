@@ -28,6 +28,12 @@ type ContainerService interface {
 	PruneContainer(ctx context.Context, externalID string) (*lifecycle.ContainerView, error)
 }
 
+// containerPurger prunes with options (?purge=true removes a persistent workspace volume);
+// *lifecycle.Service satisfies it.
+type containerPurger interface {
+	PruneContainerWith(ctx context.Context, externalID string, opts lifecycle.PruneOptions) (*lifecycle.ContainerView, error)
+}
+
 type ContainerHandler struct {
 	service ContainerService
 	idem    *idempotency.Service
@@ -42,6 +48,8 @@ type ImageInfo struct {
 	Network                 string `json:"network"`
 	IdleStopTimeout         string `json:"idle_stop_timeout"`
 	StoppedRetentionTimeout string `json:"stopped_retention_timeout"`
+	AllowStopOnly           bool   `json:"allow_stop_only"`
+	AllowPersistent         bool   `json:"allow_persistent"`
 }
 
 // WithImages sets the registered images GET /v1/images lists.
@@ -74,6 +82,8 @@ type containerResponse struct {
 	ImageVersion             string  `json:"image_version"`
 	Image                    string  `json:"image,omitempty"`
 	Network                  string  `json:"network,omitempty"`
+	Lifecycle                string  `json:"lifecycle,omitempty"`
+	Storage                  string  `json:"storage,omitempty"`
 	CreatedAt                string  `json:"created_at"`
 	UpdatedAt                string  `json:"updated_at"`
 	LastActivityAt           *string `json:"last_activity_at,omitempty"`
@@ -88,6 +98,9 @@ type createRequest struct {
 	Image      string `json:"image,omitempty"`
 	ExternalID string `json:"external_id,omitempty"`
 	IfExists   string `json:"if_exists,omitempty"`
+	// Lifecycle "stop_only" and Storage "persistent" need an image that allows them.
+	Lifecycle string `json:"lifecycle,omitempty"`
+	Storage   string `json:"storage,omitempty"`
 }
 
 // externalIDPattern is what a caller-chosen container id may look like.
@@ -125,6 +138,12 @@ func parseCreateRequest(r *http.Request) (req createRequest, hashParts []string,
 	default:
 		return req, nil, `if_exists must be "return" when given`
 	}
+	if req.Lifecycle != "" && req.Lifecycle != lifecycle.LifecycleStopOnly {
+		return req, nil, `lifecycle must be "stop_only" when given`
+	}
+	if req.Storage != "" && req.Storage != lifecycle.StoragePersistent {
+		return req, nil, `storage must be "persistent" when given`
+	}
 	canonical, _ := json.Marshal(req)
 	if string(canonical) == "{}" {
 		return req, nil, ""
@@ -160,6 +179,8 @@ func (h *ContainerHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Image:          body.Image,
 		ExternalID:     body.ExternalID,
 		ReturnExisting: body.IfExists == "return",
+		Lifecycle:      body.Lifecycle,
+		Storage:        body.Storage,
 	})
 	var exists *lifecycle.ExistsError
 	switch {
@@ -171,6 +192,13 @@ func (h *ContainerHandler) Create(w http.ResponseWriter, r *http.Request) {
 			"container":  makeContainerResponse(exists.View),
 		})
 		h.completeIdempotent(r.Context(), "containers.create", scope, idemKey, requestHash, http.StatusConflict, struct{}{})
+		return
+	case errors.Is(err, lifecycle.ErrPolicyNotAllowed):
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"code":       "policy_not_allowed",
+			"message":    err.Error(),
+			"request_id": middleware.GetRequestID(r.Context()),
+		})
 		return
 	case errors.Is(err, lifecycle.ErrUnknownImage):
 		writeJSON(w, http.StatusBadRequest, map[string]any{
@@ -310,7 +338,12 @@ func (h *ContainerHandler) Prune(w http.ResponseWriter, r *http.Request) {
 
 	idemKey := r.Header.Get(idempotency.HeaderName)
 	scope := fmt.Sprintf("containers:prune:%s", externalID)
-	requestHash := idempotency.Hash(r.Method, r.URL.Path)
+	purge := r.URL.Query().Get("purge") == "true"
+	hashParts := []string{r.Method, r.URL.Path}
+	if purge {
+		hashParts = append(hashParts, "purge") // a plain prune keeps its old hash
+	}
+	requestHash := idempotency.Hash(hashParts...)
 	begin, ok := h.beginIdempotent(w, r, "containers.prune", scope, idemKey, requestHash)
 	if !ok {
 		return
@@ -320,7 +353,13 @@ func (h *ContainerHandler) Prune(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	row, err := h.service.PruneContainer(r.Context(), externalID)
+	var row *lifecycle.ContainerView
+	var err error
+	if p, ok := h.service.(containerPurger); ok && purge {
+		row, err = p.PruneContainerWith(r.Context(), externalID, lifecycle.PruneOptions{Purge: true})
+	} else {
+		row, err = h.service.PruneContainer(r.Context(), externalID)
+	}
 	if err != nil {
 		status := writeLifecycleError(w, r, err)
 		h.completeIdempotent(r.Context(), "containers.prune", scope, idemKey, requestHash, status, struct{}{})
@@ -345,6 +384,8 @@ func makeContainerResponse(row *lifecycle.ContainerView) containerResponse {
 		ImageVersion: row.ImageVersion,
 		Image:        row.ImageName,
 		Network:      row.Network,
+		Lifecycle:    row.Lifecycle,
+		Storage:      row.Storage,
 		CreatedAt:    row.CreatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt:    row.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}

@@ -306,7 +306,8 @@ func applyImages(cfg *config.Config, resourcePolicy policy.ResourcePolicy) error
 		if network == "" {
 			network = policy.NetworkNone
 		}
-		images[name] = config.Image{Name: name, Network: network, Settings: settings}
+		images[name] = config.Image{Name: name, Network: network, Settings: settings,
+			AllowStopOnly: spec.AllowStopOnly, AllowPersistent: spec.AllowPersistent}
 	}
 	cfg.Images = images
 	cfg.DefaultImageName = resourcePolicy.DefaultImage
@@ -336,6 +337,8 @@ func imageInfos(cfg config.Config) []handlers.ImageInfo {
 			Network:                 img.Network,
 			IdleStopTimeout:         img.Settings.IdleStopTimeout.String(),
 			StoppedRetentionTimeout: img.Settings.StoppedRetentionTimeout.String(),
+			AllowStopOnly:           img.AllowStopOnly,
+			AllowPersistent:         img.AllowPersistent,
 		})
 	}
 	return out

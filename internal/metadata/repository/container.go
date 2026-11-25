@@ -11,6 +11,7 @@ import (
 	"github.com/Blue-Door-Software-Group/containers4agents/ent"
 	"github.com/Blue-Door-Software-Group/containers4agents/ent/containermetadata"
 	"github.com/Blue-Door-Software-Group/containers4agents/ent/idempotencyrecord"
+	"github.com/Blue-Door-Software-Group/containers4agents/ent/predicate"
 )
 
 var ErrNotFound = errors.New("container metadata not found")
@@ -28,7 +29,10 @@ type Container struct {
 	Profile        string
 	ImageVersion   string
 	// ImageName is the registered image ("" on rows from before images: the default image).
-	ImageName                string
+	ImageName string
+	// LifecyclePolicy ("stop_only" or "") and StoragePolicy ("persistent" or "").
+	LifecyclePolicy          string
+	StoragePolicy            string
 	ProviderRef              *string
 	CreatedAt                time.Time
 	UpdatedAt                time.Time
@@ -46,9 +50,21 @@ type CreateParams struct {
 	Profile      string
 	ImageVersion string
 	ImageName    string
+	// LifecyclePolicy and StoragePolicy are the create's policies ("" for the defaults).
+	LifecyclePolicy string
+	StoragePolicy   string
 	// ReplaceTerminal lets a caller-chosen external id be reused: an existing row for it that is
 	// pruned or failed is deleted first (in the same transaction). A live row still conflicts.
 	ReplaceTerminal bool
+}
+
+// LifecycleStopOnly is the policy of containers the reconciler never prunes.
+const LifecycleStopOnly = "stop_only"
+
+// notStopOnly leaves out stop-only containers: no retention deadline is ever given them, and
+// they are never evicted for capacity.
+func notStopOnly() predicate.ContainerMetadata {
+	return containermetadata.Or(containermetadata.LifecyclePolicyIsNil(), containermetadata.LifecyclePolicyNEQ(LifecycleStopOnly))
 }
 
 // terminalStates are the states a row's external id may be reused from.
@@ -136,6 +152,12 @@ func (r *EntContainerRepository) Create(ctx context.Context, params CreateParams
 		SetState("creating")
 	if params.ImageName != "" {
 		create.SetImageName(params.ImageName)
+	}
+	if params.LifecyclePolicy != "" {
+		create.SetLifecyclePolicy(params.LifecyclePolicy)
+	}
+	if params.StoragePolicy != "" {
+		create.SetStoragePolicy(params.StoragePolicy)
 	}
 	row, err := create.Save(ctx)
 	if err != nil {
@@ -306,6 +328,7 @@ func (r *EntContainerRepository) FindLongestIdleStopped(ctx context.Context, lim
 		Where(
 			containermetadata.StateEQ("stopped"),
 			containermetadata.LastActivityAtNotNil(),
+			notStopOnly(),
 		).
 		Order(
 			containermetadata.ByLastActivityAt(sql.OrderAsc()),
@@ -483,6 +506,7 @@ func (r *EntContainerRepository) BackfillLifecycleDeadlines(
 		Where(
 			containermetadata.StateEQ("stopped"),
 			containermetadata.RetentionPruneDeadlineAtIsNil(),
+			notStopOnly(),
 		).
 		Order(containermetadata.ByUpdatedAt(sql.OrderAsc())).
 		Limit(limit).
@@ -681,6 +705,8 @@ func mapRow(row *ent.ContainerMetadata) *Container {
 		Profile:                  row.Profile,
 		ImageVersion:             row.ImageVersion,
 		ImageName:                row.ImageName,
+		LifecyclePolicy:          row.LifecyclePolicy,
+		StoragePolicy:            row.StoragePolicy,
 		ProviderRef:              row.ProviderRef,
 		CreatedAt:                row.CreatedAt,
 		UpdatedAt:                row.UpdatedAt,

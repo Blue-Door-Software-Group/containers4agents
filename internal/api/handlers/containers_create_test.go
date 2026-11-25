@@ -131,3 +131,63 @@ func TestValidateExecEnv(t *testing.T) {
 		t.Fatal("want refusal for too many entries")
 	}
 }
+
+func TestCreate_LifecycleAndStorage(t *testing.T) {
+	var got lifecycle.CreateOptions
+	h := NewContainerHandler(optsContainerService{got: &got, answer: func(o lifecycle.CreateOptions) (*lifecycle.ContainerView, error) {
+		if o.Image == "runtime" {
+			return nil, lifecycle.ErrPolicyNotAllowed
+		}
+		v := view(o.ExternalID, false)
+		v.Lifecycle, v.Storage = o.Lifecycle, o.Storage
+		return v, nil
+	}})
+	rec := postCreate(t, h, `{"image":"swarm-dev","external_id":"x","lifecycle":"stop_only","storage":"persistent"}`)
+	var resp map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if rec.Code != http.StatusCreated || got.Lifecycle != "stop_only" || got.Storage != "persistent" || resp["lifecycle"] != "stop_only" || resp["storage"] != "persistent" {
+		t.Fatalf("%d %+v %v", rec.Code, got, resp)
+	}
+	for _, bad := range []string{`{"lifecycle":"forever"}`, `{"storage":"nfs"}`} {
+		if rec := postCreate(t, h, bad); rec.Code != http.StatusBadRequest {
+			t.Fatalf("%s: want 400, got %d", bad, rec.Code)
+		}
+	}
+	rec = postCreate(t, h, `{"image":"runtime","lifecycle":"stop_only"}`)
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if rec.Code != http.StatusBadRequest || resp["code"] != "policy_not_allowed" {
+		t.Fatalf("not allowed: %d %v", rec.Code, resp)
+	}
+}
+
+// purgeService records how a prune was asked for.
+type purgeService struct {
+	loggingContainerService
+	purged *bool
+}
+
+func (s purgeService) PruneContainer(context.Context, string) (*lifecycle.ContainerView, error) {
+	*s.purged = false
+	return view("c1", false), nil
+}
+func (s purgeService) PruneContainerWith(_ context.Context, _ string, o lifecycle.PruneOptions) (*lifecycle.ContainerView, error) {
+	*s.purged = o.Purge
+	return view("c1", false), nil
+}
+
+func TestPrune_Purge(t *testing.T) {
+	var purged bool
+	h := NewContainerHandler(purgeService{purged: &purged})
+	for _, tc := range []struct {
+		url  string
+		want bool
+	}{{"/v1/containers/c1/prune", false}, {"/v1/containers/c1/prune?purge=true", true}} {
+		req := httptest.NewRequest(http.MethodPost, tc.url, nil)
+		req.SetPathValue("id", "c1")
+		rec := httptest.NewRecorder()
+		h.Prune(rec, req)
+		if rec.Code >= 300 || purged != tc.want {
+			t.Fatalf("%s: %d purged=%v", tc.url, rec.Code, purged)
+		}
+	}
+}

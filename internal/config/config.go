@@ -73,6 +73,10 @@ type Image struct {
 	Name string
 	// Network is policy.NetworkNone or policy.NetworkEgress.
 	Network string
+	// AllowStopOnly and AllowPersistent say which lifecycle and storage policies a create on this
+	// image may ask for (both off for the implicit image).
+	AllowStopOnly   bool
+	AllowPersistent bool
 	// Settings is the server's Config with this image's ref, profile, limits and lifecycle times
 	// applied (its own Images left empty).
 	Settings Config

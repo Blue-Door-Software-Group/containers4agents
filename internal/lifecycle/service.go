@@ -19,6 +19,9 @@ import (
 var (
 	// ErrUnknownImage: the create named an image the server has not registered.
 	ErrUnknownImage = errors.New("unknown image")
+	// ErrPolicyNotAllowed: the create asked for a lifecycle or storage policy its image does not
+	// allow (or one that does not exist).
+	ErrPolicyNotAllowed = errors.New("policy not allowed for this image")
 	// ErrContainerExists: the create's external id names a live container (see ExistsError).
 	ErrContainerExists   = errors.New("container already exists")
 	ErrContainerNotFound = errors.New("container not found")
@@ -45,7 +48,21 @@ type CreateOptions struct {
 	// ReturnExisting returns a live container that already has ExternalID instead of failing
 	// with an ExistsError.
 	ReturnExisting bool
+	// Lifecycle is "" (the default: pruned after its retention) or LifecycleStopOnly.
+	Lifecycle string
+	// Storage is "" (the container's own layer) or StoragePersistent (/workspace on a named volume
+	// that outlives the container).
+	Storage string
 }
+
+// Lifecycle and storage policies a create may ask for (its image must allow them).
+const (
+	LifecycleStopOnly = repository.LifecycleStopOnly
+	StoragePersistent = "persistent"
+)
+
+// PruneOptions tune a prune: Purge also removes a persistent container's workspace volume.
+type PruneOptions struct{ Purge bool }
 
 // ExistsError is ErrContainerExists with the existing container.
 type ExistsError struct{ View *ContainerView }
@@ -61,6 +78,9 @@ type ContainerView struct {
 	// ImageName is the registered image ("" on rows from before images) and Network its mode.
 	ImageName string
 	Network   string
+	// Lifecycle and Storage are its policies ("" for the defaults).
+	Lifecycle string
+	Storage   string
 	// Existed: CreateContainer returned an existing container (ReturnExisting).
 	Existed                  bool
 	CreatedAt                time.Time
@@ -100,6 +120,14 @@ func (s *Service) CreateContainer(ctx context.Context, opts CreateOptions) (*Con
 		return nil, fmt.Errorf("%w: %q", ErrUnknownImage, opts.Image)
 	}
 	settings := img.Settings
+	switch {
+	case opts.Lifecycle != "" && (opts.Lifecycle != LifecycleStopOnly || !img.AllowStopOnly):
+		outcome = "invalid_request"
+		return nil, fmt.Errorf("%w: lifecycle %q on image %q", ErrPolicyNotAllowed, opts.Lifecycle, img.Name)
+	case opts.Storage != "" && (opts.Storage != StoragePersistent || !img.AllowPersistent):
+		outcome = "invalid_request"
+		return nil, fmt.Errorf("%w: storage %q on image %q", ErrPolicyNotAllowed, opts.Storage, img.Name)
+	}
 	if opts.ExternalID != "" {
 		if existing, err := s.liveContainer(ctx, opts.ExternalID); err != nil || existing != nil {
 			if err != nil {
@@ -158,6 +186,8 @@ func (s *Service) CreateContainer(ctx context.Context, opts CreateOptions) (*Con
 		Profile:         settings.DefaultProfile,
 		ImageVersion:    s.cfg.ActiveImageVersion,
 		ImageName:       imageName,
+		LifecyclePolicy: opts.Lifecycle,
+		StoragePolicy:   opts.Storage,
 		ReplaceTerminal: opts.ExternalID != "",
 	})
 	if errors.Is(err, repository.ErrExternalIDTaken) {
@@ -185,6 +215,7 @@ func (s *Service) CreateContainer(ctx context.Context, opts CreateOptions) (*Con
 		ImageVersion: s.cfg.ActiveImageVersion,
 		Image:        settings.DockerImage,
 		Network:      img.Network,
+		Persistent:   opts.Storage == StoragePersistent,
 		Runtime: types.RuntimeOptions{
 			CPUMaxCores:         settings.ContainerCPUMaxCores,
 			MemoryMaxBytes:      settings.ContainerMemoryMaxBytes,
@@ -363,14 +394,20 @@ func (s *Service) StopContainer(ctx context.Context, externalID string) (*Contai
 	}
 	now := time.Now().UTC()
 	retentionDeadline := now.Add(s.cfg.ForImage(row.ImageName).StoppedRetentionTimeout)
-	updated, err := s.repo.UpdateStateIfCurrent(ctx, repository.UpdateStateParams{
+	stopped := repository.UpdateStateParams{
 		ExternalID:               row.ExternalID,
 		State:                    stoppedState,
 		SetActivityNow:           true,
 		StoppedAt:                &now,
 		RetentionPruneDeadlineAt: &retentionDeadline,
 		ClearIdleStopDeadline:    true,
-	}, stoppingState)
+	}
+	if row.LifecyclePolicy == LifecycleStopOnly {
+		// Stop-only: stopped, never pruned by the reconciler, so no retention deadline.
+		stopped.RetentionPruneDeadlineAt = nil
+		stopped.ClearRetentionPruneDeadline = true
+	}
+	updated, err := s.repo.UpdateStateIfCurrent(ctx, stopped, stoppingState)
 	if err != nil {
 		if errors.Is(err, repository.ErrStateConflict) {
 			outcome = "state_conflict"
@@ -479,6 +516,12 @@ func (s *Service) StartContainer(ctx context.Context, externalID string) (*Conta
 }
 
 func (s *Service) PruneContainer(ctx context.Context, externalID string) (*ContainerView, error) {
+	return s.PruneContainerWith(ctx, externalID, PruneOptions{})
+}
+
+// PruneContainerWith prunes the container; with Purge, a persistent container's workspace volume
+// goes too (without it the volume stays, for a container created again under the same id).
+func (s *Service) PruneContainerWith(ctx context.Context, externalID string, opts PruneOptions) (*ContainerView, error) {
 	started := time.Now()
 	outcome := "internal_error"
 	defer func() {
@@ -514,7 +557,13 @@ func (s *Service) PruneContainer(ctx context.Context, externalID string) (*Conta
 		return nil, fmt.Errorf("persist pruning state: %w", err)
 	}
 
-	if err := s.provider.PruneSandbox(ctx, *row.ProviderRef); err != nil {
+	err = s.provider.PruneSandbox(ctx, *row.ProviderRef)
+	if err == nil && opts.Purge && row.StoragePolicy == StoragePersistent {
+		if purger, ok := s.provider.(types.VolumePurger); ok {
+			err = purger.RemoveWorkspaceVolume(ctx, row.ExternalID)
+		}
+	}
+	if err != nil {
 		outcome = "provider_failure"
 		category := providerFailureCategory(err)
 		s.recordProviderFailure("prune_sandbox", category)
@@ -576,6 +625,7 @@ func (s *Service) view(c *repository.Container) *ContainerView {
 	if img, ok := s.cfg.Image(c.ImageName); ok {
 		v.ImageName, v.Network = img.Name, img.Network
 	}
+	v.Lifecycle, v.Storage = c.LifecyclePolicy, c.StoragePolicy
 	return v
 }
 

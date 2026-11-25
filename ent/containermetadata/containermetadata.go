@@ -46,6 +46,10 @@ const (
 	FieldExecInProgress = "exec_in_progress"
 	// FieldImageName holds the string denoting the image_name field in the database.
 	FieldImageName = "image_name"
+	// FieldLifecyclePolicy holds the string denoting the lifecycle_policy field in the database.
+	FieldLifecyclePolicy = "lifecycle_policy"
+	// FieldStoragePolicy holds the string denoting the storage_policy field in the database.
+	FieldStoragePolicy = "storage_policy"
 	// Table holds the table name of the containermetadata in the database.
 	Table = "container_metadata"
 )
@@ -69,6 +73,8 @@ var Columns = []string{
 	FieldLastPruneError,
 	FieldExecInProgress,
 	FieldImageName,
+	FieldLifecyclePolicy,
+	FieldStoragePolicy,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -190,4 +196,14 @@ func ByExecInProgress(opts ...sql.OrderTermOption) OrderOption {
 // ByImageName orders the results by the image_name field.
 func ByImageName(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldImageName, opts...).ToFunc()
+}
+
+// ByLifecyclePolicy orders the results by the lifecycle_policy field.
+func ByLifecyclePolicy(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLifecyclePolicy, opts...).ToFunc()
+}
+
+// ByStoragePolicy orders the results by the storage_policy field.
+func ByStoragePolicy(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldStoragePolicy, opts...).ToFunc()
 }

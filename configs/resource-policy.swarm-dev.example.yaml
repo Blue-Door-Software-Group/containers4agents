@@ -15,6 +15,10 @@ images:
     network: egress
     idle_stop_timeout: 6h
     stopped_retention_timeout: 720h
+    # Callers may ask for a sandbox that is only ever stopped (never pruned by the reconciler)
+    # and whose /workspace is a named volume that outlives the container.
+    allow_stop_only: true
+    allow_persistent: true
 
 capacity:
   active_exec_limit: 10

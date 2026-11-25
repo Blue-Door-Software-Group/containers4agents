@@ -48,6 +48,10 @@ type ImageSpec struct {
 	// (Go durations such as "6h"); empty keeps C4A_IDLE_STOP_TIMEOUT / C4A_STOPPED_RETENTION_TIMEOUT.
 	IdleStopTimeout         string `yaml:"idle_stop_timeout"`
 	StoppedRetentionTimeout string `yaml:"stopped_retention_timeout"`
+	// AllowStopOnly lets a create ask for "lifecycle": "stop_only" (never pruned by the
+	// reconciler); AllowPersistent for "storage": "persistent" (/workspace on a named volume).
+	AllowStopOnly   bool `yaml:"allow_stop_only"`
+	AllowPersistent bool `yaml:"allow_persistent"`
 }
 
 // imageNamePattern is what a registered image name may look like.
