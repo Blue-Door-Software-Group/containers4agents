@@ -3,19 +3,25 @@ package docker
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/mount"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/registry"
+	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -96,12 +102,28 @@ func (p *Provider) CreateSandbox(ctx context.Context, spec types.SandboxSpec) (t
 			"c4a.external_id":   spec.ExternalID,
 			"c4a.profile":       spec.Profile,
 			"c4a.image_version": spec.ImageVersion,
+			"c4a.network":       networkLabel(spec.Network),
 		},
-		Cmd: []string{"sh", "-lc", "mkdir -p /workspace && chmod 0777 /workspace && sleep infinity"},
+		// The chmod may fail on a mounted volume the image's user does not own (the volume copies the
+		// image's /workspace ownership when it has one): the sandbox still starts.
+		Cmd: []string{"sh", "-lc", "mkdir -p /workspace; chmod 0777 /workspace 2>/dev/null; exec sleep infinity"},
 	}
 
+	networkMode, err := p.networkMode(ctx, spec.Network)
+	if err != nil {
+		return types.ProviderContainer{}, err
+	}
+	var mounts []mount.Mount
+	if spec.Persistent {
+		name, err := p.ensureWorkspaceVolume(ctx, spec.ExternalID)
+		if err != nil {
+			return types.ProviderContainer{}, err
+		}
+		mounts = append(mounts, mount.Mount{Type: mount.TypeVolume, Source: name, Target: "/workspace"})
+	}
 	hostCfg := &container.HostConfig{
-		NetworkMode: container.NetworkMode("none"),
+		Mounts:      mounts,
+		NetworkMode: networkMode,
 		Resources: container.Resources{
 			Memory:     spec.Runtime.MemoryMaxBytes,
 			MemorySwap: spec.Runtime.MemoryMaxBytes,
@@ -189,7 +211,7 @@ func (p *Provider) Exec(ctx context.Context, providerRef string, req types.ExecR
 	stdoutBuffer := newLimitedBuffer(req.MaxStdoutBytes)
 	stderrBuffer := newLimitedBuffer(req.MaxStderrBytes)
 
-	exitCode, err := p.runExec(ctx, providerRef, req.Command, req.User, nil, stdoutBuffer, stderrBuffer)
+	exitCode, err := p.runExec(ctx, providerRef, req.Command, req.User, execEnv(req.Env), nil, stdoutBuffer, stderrBuffer)
 	result := types.ExecResult{
 		Stdout:       stdoutBuffer.String(),
 		Stderr:       stderrBuffer.String(),
@@ -703,6 +725,7 @@ func (p *Provider) runExec(
 	providerRef string,
 	cmd []string,
 	user string,
+	env []string,
 	stdin io.Reader,
 	stdout io.Writer,
 	stderr io.Writer,
@@ -710,6 +733,7 @@ func (p *Provider) runExec(
 	create, err := p.cli.ContainerExecCreate(ctx, providerRef, container.ExecOptions{
 		Cmd:          cmd,
 		User:         user,
+		Env:          env,
 		WorkingDir:   "/workspace",
 		AttachStdin:  stdin != nil,
 		AttachStdout: true,
@@ -772,7 +796,7 @@ func (p *Provider) runFileScript(
 	operation string,
 	filePath string,
 ) error {
-	exitCode, err := p.runExec(ctx, providerRef, cmd, "", stdin, stdout, stderrBuffer)
+	exitCode, err := p.runExec(ctx, providerRef, cmd, "", nil, stdin, stdout, stderrBuffer)
 	if err != nil {
 		if p.devMode {
 			slog.WarnContext(
@@ -804,6 +828,110 @@ func (p *Provider) runFileScript(
 			)
 		}
 		return p.mapFileExitCode(exitCode, stderrBuffer.String(), operation, filePath)
+	}
+	return nil
+}
+
+// EgressNetworkName is the bridge network egress sandboxes join: outbound access only. Docker
+// cannot deny destinations on its own; scripts/egress-firewall.sh installs DOCKER-USER rules for
+// this network (metadata IPs, RFC1918, link-local, control planes).
+const EgressNetworkName = "c4a-egress"
+
+// EgressBridgeName is the egress network's bridge interface on the host.
+const EgressBridgeName = "c4a-egress0"
+
+func networkLabel(mode string) string {
+	if mode == types.NetworkEgress {
+		return types.NetworkEgress
+	}
+	return types.NetworkNone
+}
+
+// networkMode is the Docker network for a sandbox's network mode, creating the egress network on
+// first use. Anything but egress is no network at all.
+func (p *Provider) networkMode(ctx context.Context, mode string) (container.NetworkMode, error) {
+	switch mode {
+	case "", types.NetworkNone:
+		return container.NetworkMode("none"), nil
+	case types.NetworkEgress:
+		if err := p.ensureEgressNetwork(ctx); err != nil {
+			return "", err
+		}
+		return container.NetworkMode(EgressNetworkName), nil
+	default:
+		return "", fmt.Errorf("%w: unknown network mode %q", types.ErrProviderDenied, mode)
+	}
+}
+
+// ensureEgressNetwork creates the egress bridge network when it is missing: no traffic between
+// containers on it (enable_icc=false), and nothing published inbound.
+func (p *Provider) ensureEgressNetwork(ctx context.Context) error {
+	if _, err := p.cli.NetworkInspect(ctx, EgressNetworkName, network.InspectOptions{}); err == nil {
+		return nil
+	} else if !errdefs.IsNotFound(err) {
+		return fmt.Errorf("%w: inspect egress network: %v", types.ErrProviderUnavailable, err)
+	}
+	_, err := p.cli.NetworkCreate(ctx, EgressNetworkName, network.CreateOptions{
+		Driver: "bridge",
+		Options: map[string]string{
+			"com.docker.network.bridge.enable_icc":           "false",
+			"com.docker.network.bridge.enable_ip_masquerade": "true",
+			// A fixed interface name, so scripts/egress-firewall.sh can close the host's INPUT to it.
+			"com.docker.network.bridge.name": EgressBridgeName,
+		},
+		Labels: map[string]string{"c4a.network": types.NetworkEgress},
+	})
+	if err != nil && !errdefs.IsConflict(err) {
+		return fmt.Errorf("%w: create egress network: %v", types.ErrProviderUnavailable, err)
+	}
+	return nil
+}
+
+// execEnv is an exec's extra environment as Docker takes it, sorted for a stable order.
+func execEnv(env map[string]string) []string {
+	if len(env) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(env))
+	for k, v := range env {
+		out = append(out, k+"="+v)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// WorkspaceVolumeName is a persistent sandbox's workspace volume: a hash of its external id, since
+// external ids may hold characters volume names cannot (":"), and a mapping could collide.
+func WorkspaceVolumeName(externalID string) string {
+	sum := sha256.Sum256([]byte(externalID))
+	return "c4a-ws-" + hex.EncodeToString(sum[:])[:32]
+}
+
+// ensureWorkspaceVolume creates the sandbox's workspace volume when it is missing (labelled with
+// its external id) and returns its name; an existing one is reused, which is the point.
+func (p *Provider) ensureWorkspaceVolume(ctx context.Context, externalID string) (string, error) {
+	name := WorkspaceVolumeName(externalID)
+	if _, err := p.cli.VolumeInspect(ctx, name); err == nil {
+		return name, nil
+	} else if !errdefs.IsNotFound(err) {
+		return "", fmt.Errorf("%w: inspect workspace volume: %v", types.ErrProviderUnavailable, err)
+	}
+	_, err := p.cli.VolumeCreate(ctx, volume.CreateOptions{
+		Name:   name,
+		Labels: map[string]string{"c4a.external_id": externalID, "c4a.volume": "workspace"},
+	})
+	if err != nil && !errdefs.IsConflict(err) {
+		return "", fmt.Errorf("%w: create workspace volume: %v", types.ErrProviderUnavailable, err)
+	}
+	return name, nil
+}
+
+// RemoveWorkspaceVolume removes a persistent sandbox's workspace volume (a prune with purge); a
+// volume already gone is fine.
+func (p *Provider) RemoveWorkspaceVolume(ctx context.Context, externalID string) error {
+	err := p.cli.VolumeRemove(ctx, WorkspaceVolumeName(externalID), true)
+	if err != nil && !errdefs.IsNotFound(err) {
+		return mapDockerErr(err)
 	}
 	return nil
 }

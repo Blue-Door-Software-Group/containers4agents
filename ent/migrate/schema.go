@@ -26,6 +26,9 @@ var (
 		{Name: "next_prune_retry_at", Type: field.TypeTime, Nullable: true},
 		{Name: "last_prune_error", Type: field.TypeString, Nullable: true},
 		{Name: "exec_in_progress", Type: field.TypeBool, Default: false},
+		{Name: "image_name", Type: field.TypeString, Nullable: true},
+		{Name: "lifecycle_policy", Type: field.TypeString, Nullable: true},
+		{Name: "storage_policy", Type: field.TypeString, Nullable: true},
 	}
 	// ContainerMetadataTable holds the schema information for the "container_metadata" table.
 	ContainerMetadataTable = &schema.Table{

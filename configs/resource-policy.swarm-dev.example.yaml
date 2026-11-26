@@ -1,0 +1,78 @@
+# Example: the default image as before, plus a swarm-dev image with egress for agents that build
+# and test code. Install the egress deny rules with scripts/egress-firewall.sh before using it.
+version: v1
+active_profile: prod-strict
+default_image: runtime
+
+images:
+  runtime:
+    ref: ${C4A_DOCKER_IMAGE}
+    profile: prod-strict
+    network: none
+  swarm-dev:
+    ref: ${C4A_SWARM_DEV_IMAGE}
+    profile: dev-egress
+    network: egress
+    idle_stop_timeout: 6h
+    stopped_retention_timeout: 720h
+    # Callers may ask for a sandbox that is only ever stopped (never pruned by the reconciler)
+    # and whose /workspace is a named volume that outlives the container.
+    allow_stop_only: true
+    allow_persistent: true
+
+capacity:
+  active_exec_limit: 10
+  running_container_limit: 30
+  total_container_limit: 100
+
+profiles:
+  prod-strict:
+    cpu:
+      max_cores: 2.0
+    memory:
+      max_bytes: 3221225472
+    disk:
+      workspace_max_bytes: 10737418240
+      tmp_max_bytes: 2147483648
+      file_count_max: 100000
+    process:
+      pids_max: 256
+    exec:
+      timeout_default_seconds: 120
+      timeout_max_seconds: 300
+      stdout_max_bytes: 4194304
+      stderr_max_bytes: 4194304
+      max_concurrent_per_container: 1
+      user: "65534:65534"
+    files:
+      max_upload_bytes: 67108864
+      max_download_bytes: 67108864
+    security:
+      drop_all_capabilities: true
+      no_new_privileges: true
+      read_only_root_fs: false
+  dev-egress:
+    cpu:
+      max_cores: 4.0
+    memory:
+      max_bytes: 8589934592
+    disk:
+      workspace_max_bytes: 42949672960
+      tmp_max_bytes: 4294967296
+      file_count_max: 500000
+    process:
+      pids_max: 1024
+    exec:
+      timeout_default_seconds: 300
+      timeout_max_seconds: 1800
+      stdout_max_bytes: 4194304
+      stderr_max_bytes: 4194304
+      max_concurrent_per_container: 1
+      user: "10001:10001"
+    files:
+      max_upload_bytes: 268435456
+      max_download_bytes: 268435456
+    security:
+      drop_all_capabilities: true
+      no_new_privileges: true
+      read_only_root_fs: false

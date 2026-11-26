@@ -48,6 +48,7 @@ func NewHandler(
 		mux.Handle("POST /v1/containers/{id}/stop", m.Middleware("/v1/containers:stop", authMw(http.HandlerFunc(containerHandler.Stop))))
 		mux.Handle("POST /v1/containers/{id}/start", m.Middleware("/v1/containers:start", authMw(http.HandlerFunc(containerHandler.Start))))
 		mux.Handle("POST /v1/containers/{id}/prune", m.Middleware("/v1/containers:prune", authMw(http.HandlerFunc(containerHandler.Prune))))
+		mux.Handle("GET /v1/images", m.Middleware("/v1/images:list", authMw(http.HandlerFunc(containerHandler.Images))))
 	}
 	if authMw != nil && executionHandler != nil {
 		mux.Handle("POST /v1/containers/{id}/exec", m.Middleware("/v1/containers:exec", authMw(http.HandlerFunc(executionHandler.Exec))))

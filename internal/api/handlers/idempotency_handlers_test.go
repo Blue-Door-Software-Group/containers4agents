@@ -105,7 +105,7 @@ type noOpContainerService struct {
 	createCalls int
 }
 
-func (s *noOpContainerService) CreateContainer(context.Context) (*lifecycle.ContainerView, error) {
+func (s *noOpContainerService) CreateContainer(context.Context, lifecycle.CreateOptions) (*lifecycle.ContainerView, error) {
 	s.createCalls++
 	now := time.Now().UTC()
 	return &lifecycle.ContainerView{
@@ -134,9 +134,11 @@ type replayAwareContainerService struct {
 	createCalls int
 	createID    string
 	getByID     map[string]error
+	// stateByID is the state GetContainer reports (default running).
+	stateByID map[string]string
 }
 
-func (s *replayAwareContainerService) CreateContainer(context.Context) (*lifecycle.ContainerView, error) {
+func (s *replayAwareContainerService) CreateContainer(context.Context, lifecycle.CreateOptions) (*lifecycle.ContainerView, error) {
 	s.createCalls++
 	now := time.Now().UTC()
 	return &lifecycle.ContainerView{
@@ -154,9 +156,13 @@ func (s *replayAwareContainerService) GetContainer(_ context.Context, externalID
 		return nil, err
 	}
 	now := time.Now().UTC()
+	state := lifecycle.StateRunning
+	if st, ok := s.stateByID[externalID]; ok {
+		state = st
+	}
 	return &lifecycle.ContainerView{
 		ExternalID:   externalID,
-		State:        lifecycle.StateRunning,
+		State:        state,
 		Profile:      "default",
 		ImageVersion: "latest",
 		CreatedAt:    now,
@@ -468,14 +474,14 @@ type failOnceContainerService struct {
 	failErr error
 }
 
-func (s *failOnceContainerService) CreateContainer(ctx context.Context) (*lifecycle.ContainerView, error) {
+func (s *failOnceContainerService) CreateContainer(ctx context.Context, opts lifecycle.CreateOptions) (*lifecycle.ContainerView, error) {
 	if s.failErr != nil {
 		s.createCalls++
 		err := s.failErr
 		s.failErr = nil
 		return nil, err
 	}
-	return s.noOpContainerService.CreateContainer(ctx)
+	return s.noOpContainerService.CreateContainer(ctx, opts)
 }
 
 func TestContainerCreateFailureReleasesIdempotencyKeyForRetry(t *testing.T) {
@@ -551,4 +557,25 @@ func (s *failOnceFileService) Upload(ctx context.Context, externalID string, pat
 		return err
 	}
 	return s.noOpFileService.Upload(ctx, externalID, path, r)
+}
+
+// A caller-chosen id is reused after a prune, with the same idempotency key: the stored response
+// names the pruned tombstone, so the create runs again instead of replaying it.
+func TestContainerCreateReplayPrunedContainerCreatesFresh(t *testing.T) {
+	idemKey := "idem-pruned"
+	requestHash := idempotency.Hash(http.MethodPost, "/v1/containers")
+	replayBody := `{"id":"c-1","state":"running","profile":"default","image_version":"latest","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}`
+	repo := &handlerTestRepo{records: map[string]*repository.IdempotencyRecord{
+		"containers.create|containers:create|" + idemKey: {Operation: "containers.create", Scope: "containers:create", Key: idemKey,
+			RequestHash: requestHash, StatusCode: http.StatusCreated, ResponseBody: &replayBody},
+	}}
+	containerSvc := &replayAwareContainerService{createID: "c-1", stateByID: map[string]string{"c-1": lifecycle.StatePruned}}
+	handler := NewContainerHandler(containerSvc, idempotency.NewService(repo, time.Hour))
+	req := httptest.NewRequest(http.MethodPost, "/v1/containers", nil)
+	req.Header.Set(idempotency.HeaderName, idemKey)
+	rr := httptest.NewRecorder()
+	handler.Create(rr, req)
+	if rr.Code != http.StatusCreated || containerSvc.createCalls != 1 {
+		t.Fatalf("want a fresh create, got %d with %d creates", rr.Code, containerSvc.createCalls)
+	}
 }

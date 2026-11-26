@@ -52,6 +52,9 @@ type ContainerMetadataMutation struct {
 	next_prune_retry_at         *time.Time
 	last_prune_error            *string
 	exec_in_progress            *bool
+	image_name                  *string
+	lifecycle_policy            *string
+	storage_policy              *string
 	clearedFields               map[string]struct{}
 	done                        bool
 	oldValue                    func(context.Context) (*ContainerMetadata, error)
@@ -813,6 +816,153 @@ func (m *ContainerMetadataMutation) ResetExecInProgress() {
 	m.exec_in_progress = nil
 }
 
+// SetImageName sets the "image_name" field.
+func (m *ContainerMetadataMutation) SetImageName(s string) {
+	m.image_name = &s
+}
+
+// ImageName returns the value of the "image_name" field in the mutation.
+func (m *ContainerMetadataMutation) ImageName() (r string, exists bool) {
+	v := m.image_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldImageName returns the old "image_name" field's value of the ContainerMetadata entity.
+// If the ContainerMetadata object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ContainerMetadataMutation) OldImageName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldImageName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldImageName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldImageName: %w", err)
+	}
+	return oldValue.ImageName, nil
+}
+
+// ClearImageName clears the value of the "image_name" field.
+func (m *ContainerMetadataMutation) ClearImageName() {
+	m.image_name = nil
+	m.clearedFields[containermetadata.FieldImageName] = struct{}{}
+}
+
+// ImageNameCleared returns if the "image_name" field was cleared in this mutation.
+func (m *ContainerMetadataMutation) ImageNameCleared() bool {
+	_, ok := m.clearedFields[containermetadata.FieldImageName]
+	return ok
+}
+
+// ResetImageName resets all changes to the "image_name" field.
+func (m *ContainerMetadataMutation) ResetImageName() {
+	m.image_name = nil
+	delete(m.clearedFields, containermetadata.FieldImageName)
+}
+
+// SetLifecyclePolicy sets the "lifecycle_policy" field.
+func (m *ContainerMetadataMutation) SetLifecyclePolicy(s string) {
+	m.lifecycle_policy = &s
+}
+
+// LifecyclePolicy returns the value of the "lifecycle_policy" field in the mutation.
+func (m *ContainerMetadataMutation) LifecyclePolicy() (r string, exists bool) {
+	v := m.lifecycle_policy
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLifecyclePolicy returns the old "lifecycle_policy" field's value of the ContainerMetadata entity.
+// If the ContainerMetadata object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ContainerMetadataMutation) OldLifecyclePolicy(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLifecyclePolicy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLifecyclePolicy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLifecyclePolicy: %w", err)
+	}
+	return oldValue.LifecyclePolicy, nil
+}
+
+// ClearLifecyclePolicy clears the value of the "lifecycle_policy" field.
+func (m *ContainerMetadataMutation) ClearLifecyclePolicy() {
+	m.lifecycle_policy = nil
+	m.clearedFields[containermetadata.FieldLifecyclePolicy] = struct{}{}
+}
+
+// LifecyclePolicyCleared returns if the "lifecycle_policy" field was cleared in this mutation.
+func (m *ContainerMetadataMutation) LifecyclePolicyCleared() bool {
+	_, ok := m.clearedFields[containermetadata.FieldLifecyclePolicy]
+	return ok
+}
+
+// ResetLifecyclePolicy resets all changes to the "lifecycle_policy" field.
+func (m *ContainerMetadataMutation) ResetLifecyclePolicy() {
+	m.lifecycle_policy = nil
+	delete(m.clearedFields, containermetadata.FieldLifecyclePolicy)
+}
+
+// SetStoragePolicy sets the "storage_policy" field.
+func (m *ContainerMetadataMutation) SetStoragePolicy(s string) {
+	m.storage_policy = &s
+}
+
+// StoragePolicy returns the value of the "storage_policy" field in the mutation.
+func (m *ContainerMetadataMutation) StoragePolicy() (r string, exists bool) {
+	v := m.storage_policy
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStoragePolicy returns the old "storage_policy" field's value of the ContainerMetadata entity.
+// If the ContainerMetadata object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ContainerMetadataMutation) OldStoragePolicy(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStoragePolicy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStoragePolicy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStoragePolicy: %w", err)
+	}
+	return oldValue.StoragePolicy, nil
+}
+
+// ClearStoragePolicy clears the value of the "storage_policy" field.
+func (m *ContainerMetadataMutation) ClearStoragePolicy() {
+	m.storage_policy = nil
+	m.clearedFields[containermetadata.FieldStoragePolicy] = struct{}{}
+}
+
+// StoragePolicyCleared returns if the "storage_policy" field was cleared in this mutation.
+func (m *ContainerMetadataMutation) StoragePolicyCleared() bool {
+	_, ok := m.clearedFields[containermetadata.FieldStoragePolicy]
+	return ok
+}
+
+// ResetStoragePolicy resets all changes to the "storage_policy" field.
+func (m *ContainerMetadataMutation) ResetStoragePolicy() {
+	m.storage_policy = nil
+	delete(m.clearedFields, containermetadata.FieldStoragePolicy)
+}
+
 // Where appends a list predicates to the ContainerMetadataMutation builder.
 func (m *ContainerMetadataMutation) Where(ps ...predicate.ContainerMetadata) {
 	m.predicates = append(m.predicates, ps...)
@@ -847,7 +997,7 @@ func (m *ContainerMetadataMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ContainerMetadataMutation) Fields() []string {
-	fields := make([]string, 0, 15)
+	fields := make([]string, 0, 18)
 	if m.created_at != nil {
 		fields = append(fields, containermetadata.FieldCreatedAt)
 	}
@@ -893,6 +1043,15 @@ func (m *ContainerMetadataMutation) Fields() []string {
 	if m.exec_in_progress != nil {
 		fields = append(fields, containermetadata.FieldExecInProgress)
 	}
+	if m.image_name != nil {
+		fields = append(fields, containermetadata.FieldImageName)
+	}
+	if m.lifecycle_policy != nil {
+		fields = append(fields, containermetadata.FieldLifecyclePolicy)
+	}
+	if m.storage_policy != nil {
+		fields = append(fields, containermetadata.FieldStoragePolicy)
+	}
 	return fields
 }
 
@@ -931,6 +1090,12 @@ func (m *ContainerMetadataMutation) Field(name string) (ent.Value, bool) {
 		return m.LastPruneError()
 	case containermetadata.FieldExecInProgress:
 		return m.ExecInProgress()
+	case containermetadata.FieldImageName:
+		return m.ImageName()
+	case containermetadata.FieldLifecyclePolicy:
+		return m.LifecyclePolicy()
+	case containermetadata.FieldStoragePolicy:
+		return m.StoragePolicy()
 	}
 	return nil, false
 }
@@ -970,6 +1135,12 @@ func (m *ContainerMetadataMutation) OldField(ctx context.Context, name string) (
 		return m.OldLastPruneError(ctx)
 	case containermetadata.FieldExecInProgress:
 		return m.OldExecInProgress(ctx)
+	case containermetadata.FieldImageName:
+		return m.OldImageName(ctx)
+	case containermetadata.FieldLifecyclePolicy:
+		return m.OldLifecyclePolicy(ctx)
+	case containermetadata.FieldStoragePolicy:
+		return m.OldStoragePolicy(ctx)
 	}
 	return nil, fmt.Errorf("unknown ContainerMetadata field %s", name)
 }
@@ -1084,6 +1255,27 @@ func (m *ContainerMetadataMutation) SetField(name string, value ent.Value) error
 		}
 		m.SetExecInProgress(v)
 		return nil
+	case containermetadata.FieldImageName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetImageName(v)
+		return nil
+	case containermetadata.FieldLifecyclePolicy:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLifecyclePolicy(v)
+		return nil
+	case containermetadata.FieldStoragePolicy:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStoragePolicy(v)
+		return nil
 	}
 	return fmt.Errorf("unknown ContainerMetadata field %s", name)
 }
@@ -1150,6 +1342,15 @@ func (m *ContainerMetadataMutation) ClearedFields() []string {
 	if m.FieldCleared(containermetadata.FieldLastPruneError) {
 		fields = append(fields, containermetadata.FieldLastPruneError)
 	}
+	if m.FieldCleared(containermetadata.FieldImageName) {
+		fields = append(fields, containermetadata.FieldImageName)
+	}
+	if m.FieldCleared(containermetadata.FieldLifecyclePolicy) {
+		fields = append(fields, containermetadata.FieldLifecyclePolicy)
+	}
+	if m.FieldCleared(containermetadata.FieldStoragePolicy) {
+		fields = append(fields, containermetadata.FieldStoragePolicy)
+	}
 	return fields
 }
 
@@ -1184,6 +1385,15 @@ func (m *ContainerMetadataMutation) ClearField(name string) error {
 		return nil
 	case containermetadata.FieldLastPruneError:
 		m.ClearLastPruneError()
+		return nil
+	case containermetadata.FieldImageName:
+		m.ClearImageName()
+		return nil
+	case containermetadata.FieldLifecyclePolicy:
+		m.ClearLifecyclePolicy()
+		return nil
+	case containermetadata.FieldStoragePolicy:
+		m.ClearStoragePolicy()
 		return nil
 	}
 	return fmt.Errorf("unknown ContainerMetadata nullable field %s", name)
@@ -1237,6 +1447,15 @@ func (m *ContainerMetadataMutation) ResetField(name string) error {
 		return nil
 	case containermetadata.FieldExecInProgress:
 		m.ResetExecInProgress()
+		return nil
+	case containermetadata.FieldImageName:
+		m.ResetImageName()
+		return nil
+	case containermetadata.FieldLifecyclePolicy:
+		m.ResetLifecyclePolicy()
+		return nil
+	case containermetadata.FieldStoragePolicy:
+		m.ResetStoragePolicy()
 		return nil
 	}
 	return fmt.Errorf("unknown ContainerMetadata field %s", name)

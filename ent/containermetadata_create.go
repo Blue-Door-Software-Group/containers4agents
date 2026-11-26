@@ -207,6 +207,48 @@ func (_c *ContainerMetadataCreate) SetNillableExecInProgress(v *bool) *Container
 	return _c
 }
 
+// SetImageName sets the "image_name" field.
+func (_c *ContainerMetadataCreate) SetImageName(v string) *ContainerMetadataCreate {
+	_c.mutation.SetImageName(v)
+	return _c
+}
+
+// SetNillableImageName sets the "image_name" field if the given value is not nil.
+func (_c *ContainerMetadataCreate) SetNillableImageName(v *string) *ContainerMetadataCreate {
+	if v != nil {
+		_c.SetImageName(*v)
+	}
+	return _c
+}
+
+// SetLifecyclePolicy sets the "lifecycle_policy" field.
+func (_c *ContainerMetadataCreate) SetLifecyclePolicy(v string) *ContainerMetadataCreate {
+	_c.mutation.SetLifecyclePolicy(v)
+	return _c
+}
+
+// SetNillableLifecyclePolicy sets the "lifecycle_policy" field if the given value is not nil.
+func (_c *ContainerMetadataCreate) SetNillableLifecyclePolicy(v *string) *ContainerMetadataCreate {
+	if v != nil {
+		_c.SetLifecyclePolicy(*v)
+	}
+	return _c
+}
+
+// SetStoragePolicy sets the "storage_policy" field.
+func (_c *ContainerMetadataCreate) SetStoragePolicy(v string) *ContainerMetadataCreate {
+	_c.mutation.SetStoragePolicy(v)
+	return _c
+}
+
+// SetNillableStoragePolicy sets the "storage_policy" field if the given value is not nil.
+func (_c *ContainerMetadataCreate) SetNillableStoragePolicy(v *string) *ContainerMetadataCreate {
+	if v != nil {
+		_c.SetStoragePolicy(*v)
+	}
+	return _c
+}
+
 // SetID sets the "id" field.
 func (_c *ContainerMetadataCreate) SetID(v uuid.UUID) *ContainerMetadataCreate {
 	_c.mutation.SetID(v)
@@ -417,6 +459,18 @@ func (_c *ContainerMetadataCreate) createSpec() (*ContainerMetadata, *sqlgraph.C
 	if value, ok := _c.mutation.ExecInProgress(); ok {
 		_spec.SetField(containermetadata.FieldExecInProgress, field.TypeBool, value)
 		_node.ExecInProgress = value
+	}
+	if value, ok := _c.mutation.ImageName(); ok {
+		_spec.SetField(containermetadata.FieldImageName, field.TypeString, value)
+		_node.ImageName = value
+	}
+	if value, ok := _c.mutation.LifecyclePolicy(); ok {
+		_spec.SetField(containermetadata.FieldLifecyclePolicy, field.TypeString, value)
+		_node.LifecyclePolicy = value
+	}
+	if value, ok := _c.mutation.StoragePolicy(); ok {
+		_spec.SetField(containermetadata.FieldStoragePolicy, field.TypeString, value)
+		_node.StoragePolicy = value
 	}
 	return _node, _spec
 }

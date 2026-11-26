@@ -130,6 +130,21 @@ func ExecInProgress(v bool) predicate.ContainerMetadata {
 	return predicate.ContainerMetadata(sql.FieldEQ(FieldExecInProgress, v))
 }
 
+// ImageName applies equality check predicate on the "image_name" field. It's identical to ImageNameEQ.
+func ImageName(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEQ(FieldImageName, v))
+}
+
+// LifecyclePolicy applies equality check predicate on the "lifecycle_policy" field. It's identical to LifecyclePolicyEQ.
+func LifecyclePolicy(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEQ(FieldLifecyclePolicy, v))
+}
+
+// StoragePolicy applies equality check predicate on the "storage_policy" field. It's identical to StoragePolicyEQ.
+func StoragePolicy(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEQ(FieldStoragePolicy, v))
+}
+
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
 func CreatedAtEQ(v time.Time) predicate.ContainerMetadata {
 	return predicate.ContainerMetadata(sql.FieldEQ(FieldCreatedAt, v))
@@ -918,6 +933,231 @@ func ExecInProgressEQ(v bool) predicate.ContainerMetadata {
 // ExecInProgressNEQ applies the NEQ predicate on the "exec_in_progress" field.
 func ExecInProgressNEQ(v bool) predicate.ContainerMetadata {
 	return predicate.ContainerMetadata(sql.FieldNEQ(FieldExecInProgress, v))
+}
+
+// ImageNameEQ applies the EQ predicate on the "image_name" field.
+func ImageNameEQ(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEQ(FieldImageName, v))
+}
+
+// ImageNameNEQ applies the NEQ predicate on the "image_name" field.
+func ImageNameNEQ(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNEQ(FieldImageName, v))
+}
+
+// ImageNameIn applies the In predicate on the "image_name" field.
+func ImageNameIn(vs ...string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldIn(FieldImageName, vs...))
+}
+
+// ImageNameNotIn applies the NotIn predicate on the "image_name" field.
+func ImageNameNotIn(vs ...string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNotIn(FieldImageName, vs...))
+}
+
+// ImageNameGT applies the GT predicate on the "image_name" field.
+func ImageNameGT(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldGT(FieldImageName, v))
+}
+
+// ImageNameGTE applies the GTE predicate on the "image_name" field.
+func ImageNameGTE(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldGTE(FieldImageName, v))
+}
+
+// ImageNameLT applies the LT predicate on the "image_name" field.
+func ImageNameLT(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldLT(FieldImageName, v))
+}
+
+// ImageNameLTE applies the LTE predicate on the "image_name" field.
+func ImageNameLTE(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldLTE(FieldImageName, v))
+}
+
+// ImageNameContains applies the Contains predicate on the "image_name" field.
+func ImageNameContains(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldContains(FieldImageName, v))
+}
+
+// ImageNameHasPrefix applies the HasPrefix predicate on the "image_name" field.
+func ImageNameHasPrefix(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldHasPrefix(FieldImageName, v))
+}
+
+// ImageNameHasSuffix applies the HasSuffix predicate on the "image_name" field.
+func ImageNameHasSuffix(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldHasSuffix(FieldImageName, v))
+}
+
+// ImageNameIsNil applies the IsNil predicate on the "image_name" field.
+func ImageNameIsNil() predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldIsNull(FieldImageName))
+}
+
+// ImageNameNotNil applies the NotNil predicate on the "image_name" field.
+func ImageNameNotNil() predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNotNull(FieldImageName))
+}
+
+// ImageNameEqualFold applies the EqualFold predicate on the "image_name" field.
+func ImageNameEqualFold(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEqualFold(FieldImageName, v))
+}
+
+// ImageNameContainsFold applies the ContainsFold predicate on the "image_name" field.
+func ImageNameContainsFold(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldContainsFold(FieldImageName, v))
+}
+
+// LifecyclePolicyEQ applies the EQ predicate on the "lifecycle_policy" field.
+func LifecyclePolicyEQ(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEQ(FieldLifecyclePolicy, v))
+}
+
+// LifecyclePolicyNEQ applies the NEQ predicate on the "lifecycle_policy" field.
+func LifecyclePolicyNEQ(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNEQ(FieldLifecyclePolicy, v))
+}
+
+// LifecyclePolicyIn applies the In predicate on the "lifecycle_policy" field.
+func LifecyclePolicyIn(vs ...string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldIn(FieldLifecyclePolicy, vs...))
+}
+
+// LifecyclePolicyNotIn applies the NotIn predicate on the "lifecycle_policy" field.
+func LifecyclePolicyNotIn(vs ...string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNotIn(FieldLifecyclePolicy, vs...))
+}
+
+// LifecyclePolicyGT applies the GT predicate on the "lifecycle_policy" field.
+func LifecyclePolicyGT(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldGT(FieldLifecyclePolicy, v))
+}
+
+// LifecyclePolicyGTE applies the GTE predicate on the "lifecycle_policy" field.
+func LifecyclePolicyGTE(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldGTE(FieldLifecyclePolicy, v))
+}
+
+// LifecyclePolicyLT applies the LT predicate on the "lifecycle_policy" field.
+func LifecyclePolicyLT(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldLT(FieldLifecyclePolicy, v))
+}
+
+// LifecyclePolicyLTE applies the LTE predicate on the "lifecycle_policy" field.
+func LifecyclePolicyLTE(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldLTE(FieldLifecyclePolicy, v))
+}
+
+// LifecyclePolicyContains applies the Contains predicate on the "lifecycle_policy" field.
+func LifecyclePolicyContains(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldContains(FieldLifecyclePolicy, v))
+}
+
+// LifecyclePolicyHasPrefix applies the HasPrefix predicate on the "lifecycle_policy" field.
+func LifecyclePolicyHasPrefix(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldHasPrefix(FieldLifecyclePolicy, v))
+}
+
+// LifecyclePolicyHasSuffix applies the HasSuffix predicate on the "lifecycle_policy" field.
+func LifecyclePolicyHasSuffix(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldHasSuffix(FieldLifecyclePolicy, v))
+}
+
+// LifecyclePolicyIsNil applies the IsNil predicate on the "lifecycle_policy" field.
+func LifecyclePolicyIsNil() predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldIsNull(FieldLifecyclePolicy))
+}
+
+// LifecyclePolicyNotNil applies the NotNil predicate on the "lifecycle_policy" field.
+func LifecyclePolicyNotNil() predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNotNull(FieldLifecyclePolicy))
+}
+
+// LifecyclePolicyEqualFold applies the EqualFold predicate on the "lifecycle_policy" field.
+func LifecyclePolicyEqualFold(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEqualFold(FieldLifecyclePolicy, v))
+}
+
+// LifecyclePolicyContainsFold applies the ContainsFold predicate on the "lifecycle_policy" field.
+func LifecyclePolicyContainsFold(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldContainsFold(FieldLifecyclePolicy, v))
+}
+
+// StoragePolicyEQ applies the EQ predicate on the "storage_policy" field.
+func StoragePolicyEQ(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEQ(FieldStoragePolicy, v))
+}
+
+// StoragePolicyNEQ applies the NEQ predicate on the "storage_policy" field.
+func StoragePolicyNEQ(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNEQ(FieldStoragePolicy, v))
+}
+
+// StoragePolicyIn applies the In predicate on the "storage_policy" field.
+func StoragePolicyIn(vs ...string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldIn(FieldStoragePolicy, vs...))
+}
+
+// StoragePolicyNotIn applies the NotIn predicate on the "storage_policy" field.
+func StoragePolicyNotIn(vs ...string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNotIn(FieldStoragePolicy, vs...))
+}
+
+// StoragePolicyGT applies the GT predicate on the "storage_policy" field.
+func StoragePolicyGT(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldGT(FieldStoragePolicy, v))
+}
+
+// StoragePolicyGTE applies the GTE predicate on the "storage_policy" field.
+func StoragePolicyGTE(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldGTE(FieldStoragePolicy, v))
+}
+
+// StoragePolicyLT applies the LT predicate on the "storage_policy" field.
+func StoragePolicyLT(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldLT(FieldStoragePolicy, v))
+}
+
+// StoragePolicyLTE applies the LTE predicate on the "storage_policy" field.
+func StoragePolicyLTE(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldLTE(FieldStoragePolicy, v))
+}
+
+// StoragePolicyContains applies the Contains predicate on the "storage_policy" field.
+func StoragePolicyContains(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldContains(FieldStoragePolicy, v))
+}
+
+// StoragePolicyHasPrefix applies the HasPrefix predicate on the "storage_policy" field.
+func StoragePolicyHasPrefix(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldHasPrefix(FieldStoragePolicy, v))
+}
+
+// StoragePolicyHasSuffix applies the HasSuffix predicate on the "storage_policy" field.
+func StoragePolicyHasSuffix(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldHasSuffix(FieldStoragePolicy, v))
+}
+
+// StoragePolicyIsNil applies the IsNil predicate on the "storage_policy" field.
+func StoragePolicyIsNil() predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldIsNull(FieldStoragePolicy))
+}
+
+// StoragePolicyNotNil applies the NotNil predicate on the "storage_policy" field.
+func StoragePolicyNotNil() predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldNotNull(FieldStoragePolicy))
+}
+
+// StoragePolicyEqualFold applies the EqualFold predicate on the "storage_policy" field.
+func StoragePolicyEqualFold(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldEqualFold(FieldStoragePolicy, v))
+}
+
+// StoragePolicyContainsFold applies the ContainsFold predicate on the "storage_policy" field.
+func StoragePolicyContainsFold(v string) predicate.ContainerMetadata {
+	return predicate.ContainerMetadata(sql.FieldContainsFold(FieldStoragePolicy, v))
 }
 
 // And groups predicates with the AND operator between them.

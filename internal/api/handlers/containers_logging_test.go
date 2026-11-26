@@ -16,7 +16,7 @@ import (
 
 type loggingContainerService struct{}
 
-func (s loggingContainerService) CreateContainer(context.Context) (*lifecycle.ContainerView, error) {
+func (s loggingContainerService) CreateContainer(context.Context, lifecycle.CreateOptions) (*lifecycle.ContainerView, error) {
 	return nil, fmt.Errorf("%w: provider failure with token=super-secret command=python -c print('x')", lifecycle.ErrProviderFailure)
 }
 func (s loggingContainerService) GetContainer(context.Context, string) (*lifecycle.ContainerView, error) {

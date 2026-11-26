@@ -382,6 +382,15 @@ func (_u *ContainerMetadataUpdate) sqlSave(ctx context.Context) (_node int, err 
 	if value, ok := _u.mutation.ExecInProgress(); ok {
 		_spec.SetField(containermetadata.FieldExecInProgress, field.TypeBool, value)
 	}
+	if _u.mutation.ImageNameCleared() {
+		_spec.ClearField(containermetadata.FieldImageName, field.TypeString)
+	}
+	if _u.mutation.LifecyclePolicyCleared() {
+		_spec.ClearField(containermetadata.FieldLifecyclePolicy, field.TypeString)
+	}
+	if _u.mutation.StoragePolicyCleared() {
+		_spec.ClearField(containermetadata.FieldStoragePolicy, field.TypeString)
+	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{containermetadata.Label}
@@ -785,6 +794,15 @@ func (_u *ContainerMetadataUpdateOne) sqlSave(ctx context.Context) (_node *Conta
 	}
 	if value, ok := _u.mutation.ExecInProgress(); ok {
 		_spec.SetField(containermetadata.FieldExecInProgress, field.TypeBool, value)
+	}
+	if _u.mutation.ImageNameCleared() {
+		_spec.ClearField(containermetadata.FieldImageName, field.TypeString)
+	}
+	if _u.mutation.LifecyclePolicyCleared() {
+		_spec.ClearField(containermetadata.FieldLifecyclePolicy, field.TypeString)
+	}
+	if _u.mutation.StoragePolicyCleared() {
+		_spec.ClearField(containermetadata.FieldStoragePolicy, field.TypeString)
 	}
 	_node = &ContainerMetadata{config: _u.config}
 	_spec.Assign = _node.assignValues

@@ -54,6 +54,22 @@ func (ContainerMetadata) Fields() []ent.Field {
 			Nillable(),
 		field.Bool("exec_in_progress").
 			Default(false),
+		// The registered image the container runs (policy images); empty on rows from before
+		// images, which read as the default image. Last, so the generated runtime's field indexes
+		// stay as they were.
+		field.String("image_name").
+			Optional().
+			Immutable(),
+		// "stop_only": stopped when idle, never pruned by the reconciler (no retention deadline,
+		// never evicted for capacity); empty is the default lifecycle.
+		field.String("lifecycle_policy").
+			Optional().
+			Immutable(),
+		// "persistent": /workspace is a named volume that outlives the container (removed only by
+		// a prune with purge); empty is the container's own layer.
+		field.String("storage_policy").
+			Optional().
+			Immutable(),
 	}
 }
 

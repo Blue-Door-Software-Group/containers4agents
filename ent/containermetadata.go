@@ -48,7 +48,13 @@ type ContainerMetadata struct {
 	LastPruneError *string `json:"last_prune_error,omitempty"`
 	// ExecInProgress holds the value of the "exec_in_progress" field.
 	ExecInProgress bool `json:"exec_in_progress,omitempty"`
-	selectValues   sql.SelectValues
+	// ImageName holds the value of the "image_name" field.
+	ImageName string `json:"image_name,omitempty"`
+	// LifecyclePolicy holds the value of the "lifecycle_policy" field.
+	LifecyclePolicy string `json:"lifecycle_policy,omitempty"`
+	// StoragePolicy holds the value of the "storage_policy" field.
+	StoragePolicy string `json:"storage_policy,omitempty"`
+	selectValues  sql.SelectValues
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -60,7 +66,7 @@ func (*ContainerMetadata) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case containermetadata.FieldPruneRetryCount:
 			values[i] = new(sql.NullInt64)
-		case containermetadata.FieldExternalID, containermetadata.FieldState, containermetadata.FieldProfile, containermetadata.FieldImageVersion, containermetadata.FieldProviderRef, containermetadata.FieldLastPruneError:
+		case containermetadata.FieldExternalID, containermetadata.FieldState, containermetadata.FieldProfile, containermetadata.FieldImageVersion, containermetadata.FieldProviderRef, containermetadata.FieldLastPruneError, containermetadata.FieldImageName, containermetadata.FieldLifecyclePolicy, containermetadata.FieldStoragePolicy:
 			values[i] = new(sql.NullString)
 		case containermetadata.FieldCreatedAt, containermetadata.FieldUpdatedAt, containermetadata.FieldLastActivityAt, containermetadata.FieldIdleStopDeadlineAt, containermetadata.FieldRetentionPruneDeadlineAt, containermetadata.FieldStoppedAt, containermetadata.FieldNextPruneRetryAt:
 			values[i] = new(sql.NullTime)
@@ -184,6 +190,24 @@ func (_m *ContainerMetadata) assignValues(columns []string, values []any) error 
 			} else if value.Valid {
 				_m.ExecInProgress = value.Bool
 			}
+		case containermetadata.FieldImageName:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field image_name", values[i])
+			} else if value.Valid {
+				_m.ImageName = value.String
+			}
+		case containermetadata.FieldLifecyclePolicy:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field lifecycle_policy", values[i])
+			} else if value.Valid {
+				_m.LifecyclePolicy = value.String
+			}
+		case containermetadata.FieldStoragePolicy:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field storage_policy", values[i])
+			} else if value.Valid {
+				_m.StoragePolicy = value.String
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -278,6 +302,15 @@ func (_m *ContainerMetadata) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("exec_in_progress=")
 	builder.WriteString(fmt.Sprintf("%v", _m.ExecInProgress))
+	builder.WriteString(", ")
+	builder.WriteString("image_name=")
+	builder.WriteString(_m.ImageName)
+	builder.WriteString(", ")
+	builder.WriteString("lifecycle_policy=")
+	builder.WriteString(_m.LifecyclePolicy)
+	builder.WriteString(", ")
+	builder.WriteString("storage_policy=")
+	builder.WriteString(_m.StoragePolicy)
 	builder.WriteByte(')')
 	return builder.String()
 }

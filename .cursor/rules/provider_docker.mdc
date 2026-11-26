@@ -15,7 +15,7 @@ alwaysApply: false
 ## Sandbox hardening requirements
 
 - Run agent workloads as non-root with minimal capabilities.
-- Enforce network isolation for agent containers (no inbound/outbound access).
+- Enforce network isolation for agent containers: no inbound access ever; outbound only for egress images (the `c4a-egress` network, guarded by `scripts/egress-firewall.sh`).
 - Restrict writable filesystem scope to workspace and bounded temp paths.
 
 ## Deployment and Portainer constraints

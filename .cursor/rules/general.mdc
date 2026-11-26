@@ -26,7 +26,7 @@ alwaysApply: true
 ## Security and safety baseline
 
 - Assume sandbox workloads are untrusted.
-- Do not introduce network access for agent containers unless requirements change explicitly.
+- Agent containers have no network unless the operator registers an image with `network: egress` in the resource policy. Never let a request choose a network, and never add inbound access.
 - Never log secrets, command bodies, stdout/stderr payloads, or file contents.
 
 ## Change checklist

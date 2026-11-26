@@ -162,7 +162,7 @@ func TestExecuteRejectsNonRunningState(t *testing.T) {
 		config.Config{ExecTimeout: 2 * time.Second, ExecMaxStdoutBytes: 128, ExecMaxStderrBytes: 128},
 	)
 
-	_, err := svc.Execute(context.Background(), "c1", []string{"echo", "hello"})
+	_, err := svc.Execute(context.Background(), "c1", []string{"echo", "hello"}, nil)
 	if err == nil || !errors.Is(err, ErrStateConflict) {
 		t.Fatalf("expected ErrStateConflict, got %v", err)
 	}
@@ -186,7 +186,7 @@ func TestExecuteMapsRepositoryNotFound(t *testing.T) {
 		config.Config{ExecTimeout: 2 * time.Second, ExecMaxStdoutBytes: 128, ExecMaxStderrBytes: 128},
 	)
 
-	_, err := svc.Execute(context.Background(), "missing", []string{"echo", "hello"})
+	_, err := svc.Execute(context.Background(), "missing", []string{"echo", "hello"}, nil)
 	if err == nil || !errors.Is(err, ErrContainerNotFound) {
 		t.Fatalf("expected ErrContainerNotFound, got %v", err)
 	}
@@ -260,13 +260,13 @@ func TestExecuteRejectsConcurrentCalls(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := svc.Execute(context.Background(), "c1", []string{"echo", "one"})
+		_, err := svc.Execute(context.Background(), "c1", []string{"echo", "one"}, nil)
 		errCh <- err
 	}()
 
 	<-started
 
-	_, err := svc.Execute(context.Background(), "c1", []string{"echo", "two"})
+	_, err := svc.Execute(context.Background(), "c1", []string{"echo", "two"}, nil)
 	if err == nil || !errors.Is(err, ErrStateConflict) {
 		t.Fatalf("expected ErrStateConflict on concurrent exec, got %v", err)
 	}
@@ -304,7 +304,7 @@ func TestExecuteNormalizesUnknownStatusByExitCode(t *testing.T) {
 		config.Config{ExecTimeout: 2 * time.Second, ExecMaxStdoutBytes: 128, ExecMaxStderrBytes: 128},
 	)
 
-	result, err := svc.Execute(context.Background(), "c1", []string{"false"})
+	result, err := svc.Execute(context.Background(), "c1", []string{"false"}, nil)
 	if err != nil {
 		t.Fatalf("expected success, got %v", err)
 	}
@@ -341,7 +341,7 @@ func TestExecuteReturnsResultWhenActivityUpdateFails(t *testing.T) {
 		config.Config{ExecTimeout: 2 * time.Second, ExecMaxStdoutBytes: 128, ExecMaxStderrBytes: 128},
 	)
 
-	result, err := svc.Execute(context.Background(), "c1", []string{"echo", "done"})
+	result, err := svc.Execute(context.Background(), "c1", []string{"echo", "done"}, nil)
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
@@ -388,7 +388,7 @@ func TestExecuteRejectsWhenActiveExecutionLimitReached(t *testing.T) {
 		},
 	)
 
-	_, err := svc.Execute(context.Background(), "c1", []string{"echo", "hello"})
+	_, err := svc.Execute(context.Background(), "c1", []string{"echo", "hello"}, nil)
 	if err == nil || !errors.Is(err, ErrStateConflict) {
 		t.Fatalf("expected ErrStateConflict, got %v", err)
 	}

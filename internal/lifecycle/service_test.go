@@ -161,7 +161,7 @@ func TestCreateContainerMapsProviderFailure(t *testing.T) {
 		ActiveImageVersion: "v1",
 		DockerImage:        "alpine:3.20",
 	})
-	_, err := svc.CreateContainer(context.Background())
+	_, err := svc.CreateContainer(context.Background(), CreateOptions{})
 	if err == nil {
 		t.Fatal("expected provider failure")
 	}
@@ -221,7 +221,7 @@ func TestCreateContainerRejectsRunningLimit(t *testing.T) {
 		RunningContainerLimit: 30,
 		TotalContainerLimit:   100,
 	})
-	_, err := svc.CreateContainer(context.Background())
+	_, err := svc.CreateContainer(context.Background(), CreateOptions{})
 	if err == nil || !errors.Is(err, ErrCapacityExceeded) {
 		t.Fatalf("expected capacity exceeded, got %v", err)
 	}
@@ -245,7 +245,7 @@ func TestCreateContainerRejectsTotalLimit(t *testing.T) {
 		RunningContainerLimit: 30,
 		TotalContainerLimit:   100,
 	})
-	_, err := svc.CreateContainer(context.Background())
+	_, err := svc.CreateContainer(context.Background(), CreateOptions{})
 	if err == nil || !errors.Is(err, ErrCapacityExceeded) {
 		t.Fatalf("expected capacity exceeded, got %v", err)
 	}

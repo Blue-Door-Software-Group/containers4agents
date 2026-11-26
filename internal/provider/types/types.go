@@ -11,8 +11,25 @@ type SandboxSpec struct {
 	Profile      string
 	ImageVersion string
 	Image        string
-	Runtime      RuntimeOptions
+	// Network is "none" (the default, also when empty) or "egress": outbound access only, on the
+	// provider's dedicated egress network. The operator's image registry decides it, never a caller.
+	Network string
+	// Persistent mounts /workspace from a named volume keyed by ExternalID, kept when the sandbox
+	// is removed (VolumePurger removes it), so a sandbox created again under the id finds it.
+	Persistent bool
+	Runtime    RuntimeOptions
 }
+
+// VolumePurger removes a persistent sandbox's workspace volume (a prune with purge).
+type VolumePurger interface {
+	RemoveWorkspaceVolume(ctx context.Context, externalID string) error
+}
+
+// Network modes of a sandbox.
+const (
+	NetworkNone   = "none"
+	NetworkEgress = "egress"
+)
 
 type RuntimeOptions struct {
 	CPUMaxCores         float64
@@ -37,6 +54,8 @@ type ExecRequest struct {
 	MaxStdoutBytes int
 	MaxStderrBytes int
 	User           string
+	// Env is extra environment for this command only (name → value); never logged.
+	Env map[string]string
 }
 
 type ExecResult struct {
